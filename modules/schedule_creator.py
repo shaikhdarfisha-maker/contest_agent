@@ -95,8 +95,16 @@ class ScheduleCreator:
         try:
             self.page.locator(".css-jlrko8 > .css-32j6ly").click()
             search = library.library_name.replace("Academy: ", "").strip()
-            self.page.locator("#react-select-4-input").fill(search)
-            self.page.wait_for_timeout(800)  # let options render
+            inp = self.page.locator("#react-select-4-input")
+            inp.fill(search)
+
+            # Wait up to 3s for at least one matching option to appear.
+            try:
+                self.page.wait_for_selector(
+                    "[id^='react-select-4-option']", timeout=3_000
+                )
+            except Exception:  # noqa: BLE001
+                self.page.wait_for_timeout(800)
 
             # Prefer an option within the react-select menu (id starts with
             # react-select-4-option). Fall back to a role=option match.
@@ -104,22 +112,33 @@ class ScheduleCreator:
                 "[id^='react-select-4-option']"
             ).filter(has_text=library.library_name)
             if option.count() == 0:
-                option = self.page.get_by_role("option", name=library.library_name)
+                option = self.page.get_by_role("option").filter(
+                    has_text=library.library_name
+                )
             if option.count() == 0:
                 # Last resort: press Enter to choose the highlighted option.
-                self.page.locator("#react-select-4-input").press("Enter")
+                inp.press("Enter")
             else:
                 option.first.click()
+
+            # Confirm the selection landed: wait for the dropdown to close.
+            try:
+                self.page.wait_for_selector(
+                    "[id^='react-select-4-option']", state="detached", timeout=3_000
+                )
+            except Exception:  # noqa: BLE001
+                # Dropdown still open — try Enter as a second kick.
+                inp.press("Enter")
+                self.page.wait_for_timeout(500)
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(
                 f"Could not select library '{library.library_name}': {exc}"
             )
 
         # --- mandatory skill evaluation checkbox ------------------------- #
-        # The label varies (e.g. "DSA: Mandatory Skill Evaluation Test") and the
-        # page may also show a "...Contest Discussion" checkbox we must NOT tick.
-        # Rule: pick the skill-eval checkbox whose label contains "Test" and does
-        # NOT contain "Discussion".
+        # Rule: tick the first class whose label contains 'contest' or 'test'
+        # but NOT 'discussion'. Covers both DSA ("Mandatory Skill Evaluation
+        # Test") and non-DSA ("Backend LLD: Contest - 1: ...") libraries.
         try:
             self._check_skill_eval_checkbox()
         except Exception as exc:  # noqa: BLE001
@@ -272,14 +291,17 @@ class ScheduleCreator:
     # ------------------------------------------------------------------ #
     def _check_skill_eval_checkbox(self) -> None:
         """
-        Tick 'Mandatory Skill Evaluation Test', never 'Contest Discussion'.
-        The class list loads async after library selection and may be virtualized
-        (target is item ~71 of 73). We wait for any checkbox to appear, try a
-        direct label-text match, then scroll the list container if needed.
+        Tick the class that represents the contest or skill-eval test for this
+        library. Rule (user-supplied): the label must contain 'contest' OR
+        'test' (case-insensitive) and must NOT contain 'discussion'.
+
+        Works for DSA libraries ("DSA: Mandatory Skill Evaluation Test") and
+        non-DSA libraries ("Backend LLD: Contest - 1: Java, OOP, and Concurrency").
+        The class list loads async after library selection and may be virtualized.
         """
         import re as _re
 
-        want  = _re.compile(r"Mandatory Skill Evaluation Test", _re.I)
+        want  = _re.compile(r"contest|test", _re.I)
         avoid = _re.compile(r"Discussion", _re.I)
 
         # Wait for the async class list to begin rendering.
