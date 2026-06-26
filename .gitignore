@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/*.bak_*
+data/contest_agent.sqlite3
+data/storage_state.json
+logs/*.log
+screenshots/*.png
