@@ -207,10 +207,16 @@ DEFAULT_CONTEST_DURATION_MIN = int(os.getenv("DEFAULT_CONTEST_DURATION_MIN", "90
 # The operator filters the batches table by this keyword and clones the first
 # matching row, then renames it and sets strength.
 BATCH_CLONE_FILTER_KEYWORD = os.getenv("BATCH_CLONE_FILTER_KEYWORD", "nv ")
-# Optional: pin an exact template batch name. Empty => clone first filtered row.
-BATCH_CLONE_TEMPLATE_NAME = os.getenv("BATCH_CLONE_TEMPLATE_NAME", "")
+# Exact batch name to clone. Always clones this specific batch.
+BATCH_CLONE_TEMPLATE_NAME = os.getenv(
+    "BATCH_CLONE_TEMPLATE_NAME",
+    "Backend LLD and Development 1: NV Contest July 2026",
+)
 # Strength set on the cloned contest batch (always 1 per operator).
 BATCH_CLONE_STRENGTH = os.getenv("BATCH_CLONE_STRENGTH", "1")
+
+# Library name used when a module has no entry in the library sheet.
+FALLBACK_LIBRARY_NAME = os.getenv("FALLBACK_LIBRARY_NAME", "NV Contests")
 
 # CCT schedule-slot labels. The slot chosen depends on the day the agent runs:
 #   - MWF   if today is Monday / Wednesday / Friday

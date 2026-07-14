@@ -16,8 +16,9 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 
-from config import build_contest_name
+from config import build_contest_name, FALLBACK_LIBRARY_NAME
 from modules.library_reader import LibraryReader
+from modules.orchestrator import create_contest
 from modules.tracker import ContestTracker
 from modules.utils import (
     AmbiguousLibraryError,
@@ -55,6 +56,19 @@ def main() -> int:
         check("not-found raises", False)
     except LibraryNotFoundError:
         check("not-found raises", True)
+
+    print(f"Orchestrator fallback (unknown module -> '{FALLBACK_LIBRARY_NAME}', browser=False dry-run)")
+    outcome = create_contest(
+        module="Nonexistent Module XYZ",
+        contest_name="Test Contest",
+        start="2026-09-01 21:00",
+        end="2026-09-10 21:00",
+        program="academy",
+        browser=False,
+        dry_run_tracker=True,
+    )
+    check("orchestrator succeeds with fallback library", outcome.success)
+    check(f"orchestrator used '{FALLBACK_LIBRARY_NAME}'", outcome.library_used == FALLBACK_LIBRARY_NAME)
 
     print("Re-attempt derivation (matches Advanced DSA 4 screenshot)")
     wins = derive_attempt_windows(

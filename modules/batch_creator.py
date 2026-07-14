@@ -27,6 +27,7 @@ from playwright.sync_api import Page
 from config import (
     BATCH_CLONE_FILTER_KEYWORD,
     BATCH_CLONE_STRENGTH,
+    BATCH_CLONE_TEMPLATE_NAME,
     URLS,
 )
 from modules.logger import get_logger
@@ -74,8 +75,13 @@ class BatchCreator:
             raise BrowserStepError(f"Could not filter batches to clone: {exc}")
 
         try:
-            # Clone the first matching row.
-            self.page.get_by_text("Clone").first.click()
+            # Clone the configured template batch by name.
+            template = BATCH_CLONE_TEMPLATE_NAME
+            if template:
+                row = self.page.locator("tr").filter(has_text=template)
+                row.get_by_text("Clone").click()
+            else:
+                self.page.get_by_text("Clone").first.click()
 
             # Rename the cloned batch.
             name_box = self.page.get_by_role(

@@ -167,6 +167,35 @@ class LibraryReader:
             + ". Disambiguate by passing an explicit library_name."
         )
 
+    def resolve_by_name_only(self, program: str, library_name: str) -> LibraryMatch:
+        """Find any row in the program sheet whose library name matches, ignoring module."""
+        spec = PROGRAMS.get(program.lower())
+        if spec is None:
+            raise LibraryNotFoundError(f"Unknown program '{program}'.")
+        if spec.sheet_name not in self._wb.sheetnames:
+            raise LibraryNotFoundError(
+                f"Sheet '{spec.sheet_name}' not found in {self.workbook_path.name}"
+            )
+        ws = self._wb[spec.sheet_name]
+        rows = [tuple(r) for r in ws.iter_rows(values_only=True)]
+        if not rows:
+            raise LibraryNotFoundError(f"Sheet '{spec.sheet_name}' is empty")
+        idx = self._header_index(rows, spec)
+        target = _norm(library_name)
+        for row in rows[1:]:
+            if _norm(row[idx["library"]]) == target:
+                link = row[idx["link"]] if "link" in idx else None
+                return LibraryMatch(
+                    module=str(row[idx["module"]]).strip(),
+                    program=program.lower(),
+                    library_name=str(row[idx["library"]]).strip(),
+                    library_link=str(link).strip() if link else None,
+                    library_id=_extract_library_id(link),
+                )
+        raise LibraryNotFoundError(
+            f"Fallback library '{library_name}' not found in program '{program}'."
+        )
+
     def resolve_explicit(
         self, program: str, module: str, library_name: str
     ) -> LibraryMatch:

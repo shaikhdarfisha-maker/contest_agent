@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
 
-from config import DEFAULT_CONTEST_DURATION_MIN, DEFAULT_PROGRAM, build_contest_name
+from config import DEFAULT_CONTEST_DURATION_MIN, DEFAULT_PROGRAM, FALLBACK_LIBRARY_NAME, build_contest_name
 from modules.browser import BrowserManager
 from modules.batch_creator import BatchCreator
 from modules.hire_test import HireTest
@@ -38,8 +38,10 @@ from modules.metadata_store import MetadataStore
 from modules.schedule_creator import ScheduleCreator, ScheduleResult
 from modules.tracker import ContestTracker
 from modules.utils import (
+    AmbiguousLibraryError,
     AttemptWindow,
     ContestAgentError,
+    LibraryNotFoundError,
     derive_attempt_windows,
     parse_datetime,
 )
@@ -201,7 +203,21 @@ class ContestOrchestrator:
             return self.library_reader.resolve_explicit(
                 request.program, request.module, request.library_name
             )
-        return self.library_reader.resolve(request.program, request.module)
+        try:
+            return self.library_reader.resolve(request.program, request.module)
+        except (LibraryNotFoundError, AmbiguousLibraryError):
+            log.warning(
+                "Library not found for module '%s'; falling back to '%s'",
+                request.module,
+                FALLBACK_LIBRARY_NAME,
+            )
+            return LibraryMatch(
+                module=request.module,
+                program=request.program,
+                library_name=FALLBACK_LIBRARY_NAME,
+                library_link=None,
+                library_id=None,
+            )
 
     def _run_browser_steps(
         self,
