@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Optional, TypeVar
 
-from config import REATTEMPT_RULE, MAX_RETRIES, RETRY_BACKOFF_SECONDS
+from config import ATTEMPT_DURATIONS, REATTEMPT_RULE, MAX_RETRIES, RETRY_BACKOFF_SECONDS
 from modules.logger import get_logger
 
 log = get_logger(__name__)
@@ -163,3 +163,28 @@ def derive_attempt_windows(
     a4 = AttemptWindow("Re-attempt 3", a4_start, a4_end)
 
     return [a1, a2, a3, a4]
+
+
+def derive_attempt_windows_by_count(
+    start: datetime, num_attempts: int
+) -> list[AttemptWindow]:
+    """
+    Auto-calculate all attempt windows from start date and attempt count using
+    ATTEMPT_DURATIONS from config.
+
+    Rules:
+        A1 starts at `start` (operator's chosen time, e.g. 21:00).
+        A1 ends at start + duration[0] days (same time of day).
+        A2+ start at midnight of the preceding window's end day.
+        Each subsequent window uses its configured duration.
+    """
+    durations = ATTEMPT_DURATIONS.get(num_attempts, ATTEMPT_DURATIONS[4])
+    labels = ["Contest", "Re-attempt 1", "Re-attempt 2", "Re-attempt 3"]
+    windows: list[AttemptWindow] = []
+    current_start = start
+    for i, days in enumerate(durations):
+        current_end = current_start + timedelta(days=days)
+        windows.append(AttemptWindow(labels[i], current_start, current_end))
+        # Re-attempts begin at midnight of the end day
+        current_start = snap_midnight(current_end)
+    return windows

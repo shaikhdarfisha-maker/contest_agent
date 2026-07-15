@@ -43,6 +43,7 @@ from modules.utils import (
     ContestAgentError,
     LibraryNotFoundError,
     derive_attempt_windows,
+    derive_attempt_windows_by_count,
     parse_datetime,
 )
 
@@ -58,7 +59,8 @@ class ContestRequest:
     module: str
     contest_name: str           # operator-provided display name (free text)
     start: datetime
-    end: datetime
+    end: Optional[datetime] = None  # if None, derived from num_attempts
+    num_attempts: int = 4       # used when end is None
     program: str = DEFAULT_PROGRAM
     library_name: Optional[str] = None  # explicit override for ambiguous cases
     batch_name_override: Optional[str] = None  # exact name (skips auto-naming)
@@ -125,11 +127,17 @@ class ContestOrchestrator:
                 request.module, request.start
             )
             outcome.batch_name = batch_name
-            windows = derive_attempt_windows(request.start, request.end)
+            if request.end is not None:
+                windows = derive_attempt_windows(request.start, request.end)
+                windows = windows[:request.num_attempts]
+            else:
+                windows = derive_attempt_windows_by_count(
+                    request.start, request.num_attempts
+                )
             outcome.windows = windows
             emit(
                 "plan",
-                f"Contest '{batch_name}' planned with {len(windows)} attempts",
+                f"Contest '{batch_name}' planned with {len(windows)} attempt(s)",
             )
 
             # -- record intent in SQLite ---------------------------------- #
@@ -141,7 +149,7 @@ class ContestOrchestrator:
                 library_name=library.library_name,
                 library_link=library.library_link,
                 a1_start=request.start.isoformat(),
-                a1_end=request.end.isoformat(),
+                a1_end=windows[0].end.isoformat(),
                 windows_json=self.store.dumps([w.as_dict() for w in windows]),
                 status="planned",
             )
@@ -331,7 +339,8 @@ def create_contest(
     module: str,
     contest_name: str,
     start: str | datetime,
-    end: str | datetime,
+    end: Optional[str | datetime] = None,
+    num_attempts: int = 4,
     program: str = DEFAULT_PROGRAM,
     library_name: Optional[str] = None,
     batch_name_override: Optional[str] = None,
@@ -340,12 +349,18 @@ def create_contest(
     overwrite_tracker: bool = False,
     progress: Optional[ProgressCallback] = None,
 ) -> ContestOutcome:
-    """One-call helper used by the CLI/UI."""
+    """One-call helper used by the CLI/UI.
+
+    Supply either `end` (exact end datetime for A1) or `num_attempts` (auto-
+    compute all windows using ATTEMPT_DURATIONS from config).  If both are
+    given, `end` wins and windows are trimmed to `num_attempts`.
+    """
     request = ContestRequest(
         module=module,
         contest_name=contest_name,
         start=parse_datetime(start),
-        end=parse_datetime(end),
+        end=parse_datetime(end) if end else None,
+        num_attempts=num_attempts,
         program=program,
         library_name=library_name,
         batch_name_override=batch_name_override,

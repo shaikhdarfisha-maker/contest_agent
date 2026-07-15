@@ -5,20 +5,25 @@ Command-line entrypoint for the Contest Agent.
 
 Examples
 --------
-    # Full run (browser + tracker write):
+    # Auto windows (no --end needed — num_attempts drives duration):
+    python app.py --module "Advanced DSA 4" \
+                  --contest-name "Advanced DSA 4 July Contest" \
+                  --start "2026-07-20 21:00" --num-attempts 4
+
+    # Explicit end date (overrides num-attempts duration logic):
     python app.py --module "Advanced DSA 4" \
                   --contest-name "Advanced DSA 4 July Contest" \
                   --start "2026-07-20 21:00" --end "2026-07-30 21:00"
 
     # Safe dry run, no browser, tracker not written:
     python app.py --module "Advanced DSA 4" --contest-name x \
-                  --start "2026-07-20 21:00" --end "2026-07-30 21:00" \
+                  --start "2026-07-20 21:00" --num-attempts 2 \
                   --no-browser --dry-run-tracker
 
     # DevOps program, explicit library override:
     python app.py --module "AWS 1" --program devops \
                   --contest-name "AWS 1 Contest" \
-                  --start "2026-07-01 21:00" --end "2026-07-15 21:00"
+                  --start "2026-07-01 21:00" --num-attempts 3
 """
 
 from __future__ import annotations
@@ -38,7 +43,14 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--module", required=True, help="Module name, e.g. 'Advanced DSA 4'")
     p.add_argument("--contest-name", required=True, help="Operator display name")
     p.add_argument("--start", required=True, help="Contest start (e.g. '2026-07-20 21:00')")
-    p.add_argument("--end", required=True, help="Contest end (e.g. '2026-07-30 21:00')")
+    p.add_argument(
+        "--end", default=None,
+        help="Contest end for A1 (optional). If omitted, --num-attempts drives duration."
+    )
+    p.add_argument(
+        "--num-attempts", type=int, default=4, choices=[1, 2, 3, 4],
+        help="Number of attempts: 1=30d, 2=15d each, 3-4=7d each (used when --end is omitted)"
+    )
     p.add_argument("--program", default=DEFAULT_PROGRAM, choices=["academy", "devops", "dsml", "aiml"])
     p.add_argument("--library-name", default=None, help="Explicit library override (ambiguous modules)")
     p.add_argument("--batch-name-override", default=None, help="Exact batch name (skips auto-naming, e.g. for July label)")
@@ -74,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         contest_name=args.contest_name,
         start=args.start,
         end=args.end,
+        num_attempts=args.num_attempts,
         program=args.program,
         library_name=args.library_name,
         batch_name_override=args.batch_name_override or args.contest_name,

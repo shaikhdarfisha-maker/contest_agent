@@ -164,6 +164,22 @@ class ReattemptRule:
 
 REATTEMPT_RULE = ReattemptRule()
 
+# --------------------------------------------------------------------------- #
+# Smart date defaults (Streamlit UI auto-calculation)
+# --------------------------------------------------------------------------- #
+# When the operator picks a number of attempts without supplying an end date,
+# each attempt window is sized according to this table (days per window):
+#   1 attempt  (contest only):         30 days
+#   2 attempts (contest + 1 re-try):   15 days each
+#   3 attempts (contest + 2 re-tries):  7 days each
+#   4 attempts (contest + 3 re-tries):  7 days each
+ATTEMPT_DURATIONS: dict[int, list[int]] = {
+    1: [30],
+    2: [15, 15],
+    3: [7, 7, 7],
+    4: [7, 7, 7, 7],
+}
+
 
 # --------------------------------------------------------------------------- #
 # Browser / target systems
