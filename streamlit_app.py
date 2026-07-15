@@ -18,6 +18,17 @@ import streamlit as st
 
 from config import APP_PASSWORD, DEFAULT_PROGRAM, PROGRAMS
 from modules.orchestrator import create_contest
+from modules.library_reader import LibraryReader
+
+_DEFAULT_LIB = "— NV Contests (default) —"
+
+
+@st.cache_data
+def _load_library_names() -> list[str]:
+    try:
+        return LibraryReader().all_library_names()
+    except Exception:
+        return []
 
 st.set_page_config(page_title="NV Contest Agent", page_icon="🎯", layout="centered")
 
@@ -67,9 +78,9 @@ with st.form("contest_form"):
         start_time = st.time_input("Contest Start Time", value=time(21, 0))
     with col2:
         contest_name = st.text_input("Contest Name", placeholder="Advanced DSA 4 July Contest")
-        library_override = st.text_input(
-            "Library override (optional)", placeholder="Leave blank to use NV Contests"
-        )
+        lib_options = [_DEFAULT_LIB] + _load_library_names()
+        library_sel = st.selectbox("Library override (optional)", options=lib_options)
+        library_override = None if library_sel == _DEFAULT_LIB else library_sel
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -112,7 +123,7 @@ if submitted:
             contest_name=contest_name,
             start=start_dt,
             program=program,
-            library_name=library_override or None,
+            library_name=library_override,
             batch_name_override=contest_name,
             browser=not skip_browser,
             dry_run_tracker=dry_run,

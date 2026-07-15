@@ -196,6 +196,26 @@ class LibraryReader:
             f"Fallback library '{library_name}' not found in program '{program}'."
         )
 
+    def all_library_names(self) -> list[str]:
+        """Return all unique library names across every program sheet, sorted."""
+        names: set[str] = set()
+        for spec in PROGRAMS.values():
+            if spec.sheet_name not in self._wb.sheetnames:
+                continue
+            ws = self._wb[spec.sheet_name]
+            rows = [tuple(r) for r in ws.iter_rows(values_only=True)]
+            if not rows:
+                continue
+            try:
+                idx = self._header_index(rows, spec)
+            except LibraryNotFoundError:
+                continue
+            for row in rows[1:]:
+                lib = str(row[idx["library"]] or "").strip()
+                if lib:
+                    names.add(lib)
+        return sorted(names, key=str.casefold)
+
     def resolve_explicit(
         self, program: str, module: str, library_name: str
     ) -> LibraryMatch:
