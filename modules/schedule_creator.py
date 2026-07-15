@@ -164,6 +164,13 @@ class ScheduleCreator:
             raise BrowserStepError(f"Could not select schedule slot: {exc}")
 
         # --- start date calendar ----------------------------------------- #
+        from datetime import date as _date
+        today = _date.today()
+        if start.date() < today:
+            raise BrowserStepError(
+                f"Start date {start.date()} is in the past. "
+                f"Please use {today} or later."
+            )
         try:
             self.page.locator("i").nth(1).click()  # open the calendar
             day_cell = str(start.day)
