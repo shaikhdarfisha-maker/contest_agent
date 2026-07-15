@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
 
-from config import DEFAULT_CONTEST_DURATION_MIN, DEFAULT_PROGRAM, FALLBACK_LIBRARY_NAME, build_contest_name
+from config import DEFAULT_CONTEST_DURATION_MIN, DEFAULT_PROGRAM, FALLBACK_LIBRARY_NAME, GOOGLE_SHEET_ID, build_contest_name
 from modules.browser import BrowserManager
 from modules.batch_creator import BatchCreator
 from modules.hire_test import HireTest
@@ -37,6 +37,17 @@ from modules.logger import get_logger
 from modules.metadata_store import MetadataStore
 from modules.schedule_creator import ScheduleCreator, ScheduleResult
 from modules.tracker import ContestTracker
+
+
+def _build_tracker():
+    """Return GoogleContestTracker when configured, else the Excel tracker."""
+    if GOOGLE_SHEET_ID:
+        try:
+            from modules.google_tracker import GoogleContestTracker
+            return GoogleContestTracker()
+        except Exception as exc:
+            log.warning("Google Sheet unavailable (%s) — falling back to Excel tracker", exc)
+    return ContestTracker()
 from modules.utils import (
     AmbiguousLibraryError,
     AttemptWindow,
@@ -90,7 +101,7 @@ class ContestOrchestrator:
         store: Optional[MetadataStore] = None,
     ) -> None:
         self.library_reader = library_reader or LibraryReader()
-        self.tracker = tracker or ContestTracker()
+        self.tracker = tracker or _build_tracker()
         self.store = store or MetadataStore()
 
     # ------------------------------------------------------------------ #

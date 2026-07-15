@@ -19,6 +19,7 @@ import streamlit as st
 from config import APP_PASSWORD, DEFAULT_PROGRAM, PROGRAMS
 from modules.orchestrator import create_contest
 from modules.library_reader import LibraryReader
+from config import GOOGLE_SHEET_ID
 from modules.tracker import ContestTracker
 
 _DEFAULT_LIB = "— NV Contests (default) —"
@@ -93,10 +94,13 @@ with sel_col2:
         placeholder="Type to search…",
     )
 
-# Suggest next contest name based on tracker history
+# Suggest next contest name based on tracker history (Google Sheet preferred)
 @st.cache_data
 def _suggest_name(mod: str) -> str:
     try:
+        if GOOGLE_SHEET_ID:
+            from modules.google_tracker import GoogleContestTracker
+            return GoogleContestTracker().suggest_next_name(mod)
         return ContestTracker().suggest_next_name(mod)
     except Exception:
         return mod

@@ -248,6 +248,16 @@ FALLBACK_LIBRARY_NAME = os.getenv("FALLBACK_LIBRARY_NAME", "NV Contests")
 # Shared password for the Streamlit UI. Set via APP_PASSWORD env var.
 APP_PASSWORD = os.getenv("APP_PASSWORD", "")
 
+# --------------------------------------------------------------------------- #
+# Google Sheets tracker (optional — used when GOOGLE_SHEET_ID is set)
+# --------------------------------------------------------------------------- #
+GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "")
+GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", TRACKER_SHEET.strip())
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv(
+    "GOOGLE_SERVICE_ACCOUNT_JSON",
+    str(DATA_DIR / "service_account.json"),
+)
+
 # CCT schedule-slot labels. The slot chosen depends on the day the agent runs:
 #   - MWF   if today is Monday / Wednesday / Friday
 #   - T-Th-Sat otherwise

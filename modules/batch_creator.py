@@ -104,6 +104,21 @@ class BatchCreator:
             self.page.get_by_role("button", name="Clone").click()
             self.page.wait_for_load_state("networkidle")
         except Exception as exc:  # noqa: BLE001
+            # Clone can fail if the batch was already created in a prior partial
+            # run (the platform rejects the duplicate name). Before giving up,
+            # check whether the batch exists and reuse it.
+            log.warning(
+                "Clone step threw — checking if batch '%s' already exists: %s",
+                batch_name, exc,
+            )
+            self.page.goto(URLS["admin_batches"])
+            fallback_id = self._find_existing_batch(batch_name)
+            if fallback_id is not None:
+                log.warning(
+                    "Batch '%s' found after clone error (id=%s) — reusing",
+                    batch_name, fallback_id,
+                )
+                return BatchResult(batch_name=batch_name, batch_id=fallback_id or None)
             raise BrowserStepError(f"Could not complete batch clone: {exc}")
 
         # Navigate back to find the new batch and extract its id.
