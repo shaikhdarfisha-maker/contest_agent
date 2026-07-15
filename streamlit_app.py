@@ -117,6 +117,7 @@ if submitted:
             end=end_dt,
             program=program,
             library_name=library_override or None,
+            batch_name_override=contest_name,
             browser=not skip_browser,
             dry_run_tracker=dry_run,
             overwrite_tracker=overwrite,

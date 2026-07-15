@@ -332,11 +332,17 @@ class ScheduleCreator:
                 .filter(has_text=want)
                 .filter(has_not_text=avoid)
             )
-            # If a module-specific preferred name is given, try it first.
+            # If a module-specific preferred name is given, require a match.
+            # Multiple classes mean this is NV Contests — picking the wrong
+            # one silently is worse than failing fast.
             if preferred_name and labels.count() > 1:
                 preferred = labels.filter(has_text=preferred_name)
-                if preferred.count() > 0:
-                    labels = preferred
+                if preferred.count() == 0:
+                    raise BrowserStepError(
+                        f"Module '{preferred_name}' not found in NV Contests library. "
+                        f"Use the Library override field to specify the correct library."
+                    )
+                labels = preferred
             if labels.count() > 0:
                 lbl = labels.first
                 for_id = lbl.get_attribute("for")
