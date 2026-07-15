@@ -122,10 +122,18 @@ class ScheduleCreator:
                     has_text=library.library_name
                 )
             if option.count() == 0:
-                # Last resort: press Enter to choose the highlighted option.
-                inp.press("Enter")
-            else:
-                option.first.click()
+                # Nothing matched — list what IS visible so the error is useful.
+                visible = self.page.locator("[id^='react-select-4-option']")
+                available = [
+                    visible.nth(i).inner_text(timeout=500)
+                    for i in range(min(visible.count(), 8))
+                ]
+                raise BrowserStepError(
+                    f"Library '{library.library_name}' not found in the dropdown. "
+                    f"Visible options: {available}. "
+                    f"Check the Library override or contact support."
+                )
+            option.first.click()
 
             # Confirm the selection landed: wait for the dropdown to close.
             try:
@@ -133,8 +141,6 @@ class ScheduleCreator:
                     "[id^='react-select-4-option']", state="detached", timeout=3_000
                 )
             except Exception:  # noqa: BLE001
-                # Dropdown still open — try Enter as a second kick.
-                inp.press("Enter")
                 self.page.wait_for_timeout(500)
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(
@@ -302,6 +308,12 @@ class ScheduleCreator:
         return result
 
     # ------------------------------------------------------------------ #
+    # Short common words to skip when doing fuzzy matching
+    _FUZZY_SKIP = {
+        "and", "or", "to", "of", "for", "the", "in", "on",
+        "a", "an", "is", "are", "its", "with", "at",
+    }
+
     def _check_skill_eval_checkbox(self, preferred_name: str = "") -> None:
         """
         Tick the class that represents the contest or skill-eval test for this
@@ -310,7 +322,7 @@ class ScheduleCreator:
 
         When preferred_name is given (the module name), prefer a label that also
         contains it — handles NV Contests library which has one class per module.
-        Falls back to the first matching label if no preferred match is found.
+        Falls back to word-level fuzzy matching if exact substring fails.
         """
         import re as _re
 
@@ -325,6 +337,17 @@ class ScheduleCreator:
                 f"Class-list checkboxes never appeared after library selection: {exc}"
             )
 
+        def _available_class_names(labels_loc) -> str:
+            names = []
+            for i in range(min(labels_loc.count(), 12)):
+                try:
+                    txt = labels_loc.nth(i).inner_text(timeout=500).strip()
+                    if txt:
+                        names.append(txt[:70])
+                except Exception:  # noqa: BLE001
+                    pass
+            return "; ".join(names) if names else "(none found)"
+
         def _find_target():
             # Match via label element text.
             labels = (
@@ -332,15 +355,42 @@ class ScheduleCreator:
                 .filter(has_text=want)
                 .filter(has_not_text=avoid)
             )
-            # If a module-specific preferred name is given, require a match.
+            # If a module-specific preferred name is given, try to match it.
             # Multiple classes mean this is NV Contests — picking the wrong
             # one silently is worse than failing fast.
             if preferred_name and labels.count() > 1:
+                # 1. Exact substring match
                 preferred = labels.filter(has_text=preferred_name)
+
+                # 2. Fuzzy: filter by each significant word in the module name
+                if preferred.count() == 0:
+                    sig_words = [
+                        w for w in preferred_name.split()
+                        if len(w) >= 3 and w.lower() not in self._FUZZY_SKIP
+                    ]
+                    fuzzy = labels
+                    for word in sig_words:
+                        narrowed = fuzzy.filter(has_text=word)
+                        if narrowed.count() > 0:
+                            fuzzy = narrowed
+                    if fuzzy.count() == 1:
+                        log.info(
+                            "Fuzzy-matched class for '%s' using words %s",
+                            preferred_name, sig_words,
+                        )
+                        preferred = fuzzy
+
                 if preferred.count() == 0:
                     raise BrowserStepError(
                         f"Module '{preferred_name}' not found in NV Contests library. "
+                        f"Available classes: {_available_class_names(labels)}. "
                         f"Use the Library override field to specify the correct library."
+                    )
+                if preferred.count() > 1:
+                    raise BrowserStepError(
+                        f"Multiple classes matched '{preferred_name}' in NV Contests: "
+                        f"{_available_class_names(preferred)}. "
+                        f"Use the Library override field to be more specific."
                     )
                 labels = preferred
             if labels.count() > 0:
