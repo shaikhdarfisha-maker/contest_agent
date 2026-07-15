@@ -50,20 +50,28 @@ class BatchCreator:
 
     @retry(exceptions=(BrowserStepError,))
     def create_batch(self, batch_name: str) -> BatchResult:
-        """Clone an existing NV batch into a new contest batch."""
+        """Clone an existing NV batch, or reuse it if it already exists."""
         log.info("Creating batch via clone: %s", batch_name)
         self.page.goto(URLS["admin_batches"])
 
+        # Guard: reuse if a previous (failed) run already created this batch.
+        existing_id = self._find_existing_batch(batch_name)
+        if existing_id is not None:
+            log.warning(
+                "Batch '%s' already exists (id=%s) — reusing to avoid duplicate",
+                batch_name, existing_id or "unknown",
+            )
+            return BatchResult(batch_name=batch_name, batch_id=existing_id or None)
+
+        # Batch doesn't exist — reload and filter by template keyword to clone.
+        self.page.goto(URLS["admin_batches"])
         try:
-            # Open the Name-column filter (2nd column header filter button).
             self.page.locator(
                 "th:nth-child(2) > .data-table__header-item > "
                 ".data-table__header-actions > "
                 ".tappable.btn.btn-light.btn-small.data-table__action."
                 "data-table__action--filter"
             ).click()
-
-            # Type the clone keyword into the filter textbox and apply.
             filter_form = self.page.locator("form").filter(
                 has_text="KeywordClearApply"
             )
@@ -75,7 +83,6 @@ class BatchCreator:
             raise BrowserStepError(f"Could not filter batches to clone: {exc}")
 
         try:
-            # Clone the configured template batch by name.
             template = BATCH_CLONE_TEMPLATE_NAME
             if template:
                 row = self.page.locator("tr").filter(has_text=template)
@@ -83,20 +90,17 @@ class BatchCreator:
             else:
                 self.page.get_by_text("Clone").first.click()
 
-            # Rename the cloned batch.
             name_box = self.page.get_by_role(
                 "textbox", name="Enter Super Batch Name"
             )
             name_box.click()
             name_box.fill(batch_name)
 
-            # Strength = 1 (spinbutton), then tick the required checkbox.
             strength = self.page.get_by_role("spinbutton")
             strength.click()
             strength.fill(str(BATCH_CLONE_STRENGTH))
             self.page.get_by_role("checkbox").check()
 
-            # Confirm clone.
             self.page.get_by_role("button", name="Clone").click()
             self.page.wait_for_load_state("networkidle")
         except Exception as exc:  # noqa: BLE001
@@ -105,6 +109,32 @@ class BatchCreator:
         batch_id = self._extract_batch_id(batch_name)
         log.info("Batch created via clone: %s (id=%s)", batch_name, batch_id)
         return BatchResult(batch_name=batch_name, batch_id=batch_id)
+
+    def _find_existing_batch(self, batch_name: str) -> Optional[str]:
+        """Filter the batches table for batch_name; return its id if found, else None."""
+        try:
+            self.page.locator(
+                "th:nth-child(2) > .data-table__header-item > "
+                ".data-table__header-actions > "
+                ".tappable.btn.btn-light.btn-small.data-table__action."
+                "data-table__action--filter"
+            ).click()
+            filter_form = self.page.locator("form").filter(
+                has_text="KeywordClearApply"
+            )
+            filter_form.get_by_role("textbox").click()
+            filter_form.get_by_role("textbox").fill(batch_name)
+            self.page.get_by_role("button", name="Apply").click()
+            self.page.wait_for_load_state("networkidle")
+
+            row = self.page.locator("tr").filter(has_text=batch_name)
+            if row.count() == 0:
+                return None
+            text = row.first.inner_text(timeout=3_000)
+            id_match = re.search(r"\b(\d{3,})\b", text)
+            return id_match.group(1) if id_match else ""
+        except Exception:  # noqa: BLE001
+            return None
 
     def _extract_batch_id(self, batch_name: str) -> Optional[str]:
         """Best-effort batch-id extraction from URL or the row."""
