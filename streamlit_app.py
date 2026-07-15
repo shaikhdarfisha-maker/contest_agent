@@ -5,26 +5,29 @@ Dashboard for the Contest Agent with a shared-password login gate.
 
 Run with:
     streamlit run streamlit_app.py
-
-Set APP_PASSWORD in .env (or environment) to enable the login screen.
-If APP_PASSWORD is empty, the login screen is skipped.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, date, time
 
 import streamlit as st
 
-from config import APP_PASSWORD, DEFAULT_PROGRAM, PROGRAMS
-from modules.orchestrator import create_contest
+from config import APP_PASSWORD, DEFAULT_PROGRAM, GOOGLE_SHEET_ID, PROGRAMS
 from modules.library_reader import LibraryReader
-from config import GOOGLE_SHEET_ID
+from modules.metadata_store import MetadataStore
+from modules.orchestrator import create_contest
 from modules.tracker import ContestTracker
+
+st.set_page_config(page_title="NV Contest Agent", page_icon="🎯", layout="wide")
 
 _DEFAULT_LIB = "— NV Contests (default) —"
 
 
+# --------------------------------------------------------------------------- #
+# Cached data loaders
+# --------------------------------------------------------------------------- #
 @st.cache_data
 def _load_library_names() -> list[str]:
     try:
@@ -32,7 +35,24 @@ def _load_library_names() -> list[str]:
     except Exception:
         return []
 
-st.set_page_config(page_title="NV Contest Agent", page_icon="🎯", layout="centered")
+
+@st.cache_data
+def _load_module_names(prog: str) -> list[str]:
+    try:
+        return LibraryReader().all_module_names(prog)
+    except Exception:
+        return []
+
+
+@st.cache_data
+def _suggest_name(mod: str, prog: str) -> str:
+    try:
+        if GOOGLE_SHEET_ID:
+            from modules.google_tracker import GoogleContestTracker
+            return GoogleContestTracker(program=prog).suggest_next_name(mod)
+        return ContestTracker().suggest_next_name(mod)
+    except Exception:
+        return mod
 
 
 # --------------------------------------------------------------------------- #
@@ -58,9 +78,9 @@ if APP_PASSWORD and not st.session_state.get("authenticated"):
 
 
 # --------------------------------------------------------------------------- #
-# Main app
+# Header
 # --------------------------------------------------------------------------- #
-col_title, col_logout = st.columns([6, 1])
+col_title, col_logout = st.columns([8, 1])
 with col_title:
     st.title("🎯 Neovarsity Contest Creation Agent")
     st.caption("Automates batch creation → CCT scheduling → Hire Test → tracker update.")
@@ -69,129 +89,184 @@ with col_logout:
         st.session_state["authenticated"] = False
         st.rerun()
 
-# Program + module selectors live outside the form so the module list
-# updates immediately when the program is changed.
-sel_col1, sel_col2 = st.columns(2)
-with sel_col1:
-    program = st.selectbox(
-        "Program",
-        options=list(PROGRAMS.keys()),
-        index=list(PROGRAMS.keys()).index(DEFAULT_PROGRAM),
-    )
-with sel_col2:
-    @st.cache_data
-    def _load_module_names(prog: str) -> list[str]:
-        try:
-            return LibraryReader().all_module_names(prog)
-        except Exception:
-            return []
+tab_create, tab_history = st.tabs(["Create Contest", "Run History"])
 
-    module_options = _load_module_names(program)
-    module = st.selectbox(
-        "Module Name",
-        options=module_options,
-        index=None,
-        placeholder="Type to search…",
-    )
 
-# Suggest next contest name based on tracker history (Google Sheet preferred)
-@st.cache_data
-def _suggest_name(mod: str, prog: str) -> str:
-    try:
-        if GOOGLE_SHEET_ID:
-            from modules.google_tracker import GoogleContestTracker
-            return GoogleContestTracker(program=prog).suggest_next_name(mod)
-        return ContestTracker().suggest_next_name(mod)
-    except Exception:
-        return mod
-
-suggested_name = _suggest_name(module, program) if module else ""
-if suggested_name:
-    st.caption(f"Suggested contest name: **{suggested_name}**")
-
-with st.form("contest_form"):
-    col1, col2 = st.columns(2)
-    with col1:
-        contest_name = st.text_input(
-            "Contest Name",
-            value=suggested_name,
-            placeholder="Advanced DSA 4 July Contest",
+# --------------------------------------------------------------------------- #
+# Tab 1: Create Contest
+# --------------------------------------------------------------------------- #
+with tab_create:
+    # Program + module outside the form so module list refreshes on program change
+    sel_col1, sel_col2 = st.columns(2)
+    with sel_col1:
+        program = st.selectbox(
+            "Program",
+            options=list(PROGRAMS.keys()),
+            index=list(PROGRAMS.keys()).index(DEFAULT_PROGRAM),
         )
-        start_date = st.date_input("Contest Start Date", value=date.today())
-        start_time = st.time_input("Contest Start Time", value=time(21, 0))
-    with col2:
-        lib_options = [_DEFAULT_LIB] + _load_library_names()
-        library_sel = st.selectbox("Library override (optional)", options=lib_options)
-        library_override = None if library_sel == _DEFAULT_LIB else library_sel
-
-    submitted = st.form_submit_button("Create Contest", type="primary")
-
-if submitted:
-    if not module or not contest_name:
-        st.error("Module Name and Contest Name are required.")
-        st.stop()
-
-    start_dt = datetime.combine(start_date, start_time)
-
-    steps = {
-        "library": "Reading Library",
-        "plan": "Planning Windows",
-        "batch": "Creating Batch",
-        "schedule": "Scheduling Class",
-        "hire_update": "Updating Hire Test",
-        "tracker": "Updating Tracker",
-        "done": "Completed",
-    }
-    placeholders = {k: st.empty() for k in steps}
-    for k, label in steps.items():
-        placeholders[k].markdown(f"⬜ {label}")
-
-    def progress(step: str, msg: str, ok: bool) -> None:
-        if step in placeholders:
-            icon = "✅" if ok else "❌"
-            placeholders[step].markdown(f"{icon} {steps[step]}")
-
-    with st.spinner("Running workflow..."):
-        outcome = create_contest(
-            module=module,
-            contest_name=contest_name,
-            start=start_dt,
-            program=program,
-            library_name=library_override,
-            batch_name_override=contest_name,
-            browser=True,
-            dry_run_tracker=False,
-            overwrite_tracker=True,
-            progress=progress,
+    with sel_col2:
+        module_options = _load_module_names(program)
+        module = st.selectbox(
+            "Module Name",
+            options=module_options,
+            index=None,
+            placeholder="Type to search…",
         )
 
-    if outcome.success:
-        st.success("Contest Successfully Created")
-    else:
-        st.error(f"Failed: {outcome.error}")
+    suggested_name = _suggest_name(module, program) if module else ""
+    if suggested_name:
+        st.caption(f"Suggested: **{suggested_name}**")
 
-    st.subheader("Summary")
-    st.json(
-        {
-            "Batch Name": outcome.batch_name,
-            "Library Used": outcome.library_used,
-            "Contest ID": outcome.contest_id,
-            "Test IDs": outcome.test_ids,
-            "Tracker Row": outcome.tracker_row,
-            "Execution Time (s)": outcome.execution_seconds,
+    with st.form("contest_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            contest_name = st.text_input(
+                "Contest Name",
+                value=suggested_name,
+                placeholder="Advanced DSA 4 July Contest",
+            )
+            start_date = st.date_input("Contest Start Date", value=date.today())
+            start_time = st.time_input("Contest Start Time", value=time(21, 0))
+        with col2:
+            lib_options = [_DEFAULT_LIB] + _load_library_names()
+            library_sel = st.selectbox("Library override (optional)", options=lib_options)
+            library_override = None if library_sel == _DEFAULT_LIB else library_sel
+
+        submitted = st.form_submit_button("Create Contest", type="primary")
+
+    if submitted:
+        if not module or not contest_name:
+            st.error("Module Name and Contest Name are required.")
+            st.stop()
+
+        start_dt = datetime.combine(start_date, start_time)
+
+        steps = {
+            "library": "Reading Library",
+            "plan":    "Planning Windows",
+            "batch":   "Creating Batch",
+            "schedule":"Scheduling Class",
+            "hire_update": "Updating Hire Test",
+            "tracker": "Updating Tracker",
+            "done":    "Completed",
         }
-    )
+        placeholders = {k: st.empty() for k in steps}
+        for k, label in steps.items():
+            placeholders[k].markdown(f"⬜ {label}")
 
-    if outcome.windows:
-        st.subheader("Attempt Windows")
-        st.table(
-            [
-                {
-                    "Attempt": w.label,
-                    "Start": w.start.strftime("%d %b %Y %H:%M"),
-                    "End": w.end.strftime("%d %b %Y %H:%M"),
-                    "Duration": f"{(w.end - w.start).days} days",
-                }
-                for w in outcome.windows
-            ]
-        )
+        def progress(step: str, msg: str, ok: bool) -> None:
+            if step in placeholders:
+                icon = "✅" if ok else "❌"
+                placeholders[step].markdown(f"{icon} {steps[step]}")
+
+        with st.spinner("Running workflow…"):
+            outcome = create_contest(
+                module=module,
+                contest_name=contest_name,
+                start=start_dt,
+                program=program,
+                library_name=library_override,
+                batch_name_override=contest_name,
+                browser=True,
+                dry_run_tracker=False,
+                overwrite_tracker=True,
+                progress=progress,
+            )
+
+        if outcome.success:
+            st.success("Contest Successfully Created")
+        else:
+            st.error(f"Failed: {outcome.error}")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("Summary")
+            st.json({
+                "Batch Name":       outcome.batch_name,
+                "Library Used":     outcome.library_used,
+                "Contest ID":       outcome.contest_id,
+                "Test IDs":         outcome.test_ids,
+                "Tracker Row":      outcome.tracker_row,
+                "Execution Time (s)": outcome.execution_seconds,
+            })
+        with c2:
+            if outcome.windows:
+                st.subheader("Attempt Windows")
+                st.table([
+                    {
+                        "Attempt":  w.label,
+                        "Start":    w.start.strftime("%d %b %Y %H:%M"),
+                        "End":      w.end.strftime("%d %b %Y %H:%M"),
+                        "Duration": f"{(w.end - w.start).days}d",
+                    }
+                    for w in outcome.windows
+                ])
+
+        # Invalidate suggestion cache so next open shows updated month
+        _suggest_name.clear()
+
+
+# --------------------------------------------------------------------------- #
+# Tab 2: Run History
+# --------------------------------------------------------------------------- #
+with tab_history:
+    st.subheader("Run History")
+
+    if st.button("Refresh", key="refresh_history"):
+        st.cache_data.clear()
+
+    rows = MetadataStore().recent_contests(limit=100)
+
+    if not rows:
+        st.info("No contests have been created yet.")
+    else:
+        # Filters
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            prog_filter = st.multiselect(
+                "Program", options=sorted({r["program"] for r in rows})
+            )
+        with f2:
+            status_filter = st.multiselect(
+                "Status", options=sorted({r["status"] for r in rows})
+            )
+        with f3:
+            search = st.text_input("Search batch name", placeholder="DSA…")
+
+        filtered = rows
+        if prog_filter:
+            filtered = [r for r in filtered if r["program"] in prog_filter]
+        if status_filter:
+            filtered = [r for r in filtered if r["status"] in status_filter]
+        if search:
+            filtered = [r for r in filtered if search.lower() in r["batch_name"].lower()]
+
+        st.caption(f"Showing {len(filtered)} of {len(rows)} runs")
+
+        for r in filtered:
+            status_icon = {"created": "✅", "planned": "🕐", "failed": "❌"}.get(r["status"], "•")
+            created_at = r["created_at"][:16].replace("T", " ")
+
+            with st.expander(
+                f"{status_icon}  {r['batch_name']}   —   {r['program'].upper()}   —   {created_at}"
+            ):
+                d1, d2, d3 = st.columns(3)
+                with d1:
+                    st.markdown(f"**Module:** {r['module']}")
+                    st.markdown(f"**Program:** {r['program'].upper()}")
+                    st.markdown(f"**Status:** {r['status']}")
+                    st.markdown(f"**Library:** {r['library_name'] or '—'}")
+                with d2:
+                    st.markdown(f"**Contest ID:** {r['contest_id'] or '—'}")
+                    test_ids = json.loads(r["test_ids_json"] or "[]")
+                    st.markdown(f"**Test IDs:** {', '.join(test_ids) or '—'}")
+                    st.markdown(f"**Tracker Row:** {r['tracker_row'] or '—'}")
+                    st.markdown(f"**Created:** {created_at}")
+                with d3:
+                    windows = json.loads(r["windows_json"] or "[]")
+                    if windows:
+                        st.markdown("**Attempt Windows:**")
+                        for w in windows:
+                            start = w["start"][:10]
+                            end = w["end"][:10]
+                            st.markdown(f"- {w['label']}: {start} → {end}")

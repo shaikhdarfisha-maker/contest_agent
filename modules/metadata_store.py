@@ -146,6 +146,23 @@ class MetadataStore:
                 (contest_id, step, level, message, datetime.now().isoformat()),
             )
 
+    # -- reads ------------------------------------------------------------- #
+    def recent_contests(self, limit: int = 100) -> list[dict]:
+        """Return the most recent contest runs, newest first."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, program, module, batch_name, library_name,
+                       contest_id, test_ids_json, a1_start, a1_end,
+                       windows_json, status, tracker_row, created_at
+                FROM   contests
+                ORDER  BY id DESC
+                LIMIT  ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     # -- helpers ----------------------------------------------------------- #
     @staticmethod
     def dumps(value: Any) -> str:
