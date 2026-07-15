@@ -22,6 +22,8 @@ CONCATENATE batch-name formula style the sheet already uses).
 
 from __future__ import annotations
 
+import calendar
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -168,6 +170,58 @@ class ContestTracker:
             elif val.strip().lower() == target:
                 return True
         return False
+
+    # ---------------------------------------------------------------------- #
+    def suggest_next_name(self, module: str) -> str:
+        """
+        Scan existing tracker rows for this module, find the latest
+        'NV Contest MONTH YEAR' batch, and return the name for the next month.
+        Falls back to the current month if no prior batch is found.
+        """
+        month_index = {m.lower(): i for i, m in enumerate(calendar.month_name) if m}
+        found: list[tuple[int, int]] = []  # (year, month_num)
+
+        wb = load_workbook(self.workbook_path, read_only=True, data_only=True)
+        if self.sheet_name not in wb.sheetnames:
+            wb.close()
+            return self._default_name(module)
+
+        ws = wb[self.sheet_name]
+        module_norm = module.strip().lower()
+        mod_col = TRACKER_COLS["module"] - 1   # 0-based for iter_rows
+        bat_col = TRACKER_COLS["batch_name"] - 1
+
+        for row in ws.iter_rows(
+            min_row=TRACKER_FIRST_DATA_ROW, values_only=True
+        ):
+            if not row or len(row) <= max(mod_col, bat_col):
+                continue
+            if str(row[mod_col] or "").strip().lower() != module_norm:
+                continue
+            batch_val = str(row[bat_col] or "").strip()
+            m = re.search(r"NV\s+Contest\s+(\w+)\s+(\d{4})", batch_val, re.I)
+            if m:
+                mon_str, yr_str = m.group(1).lower(), m.group(2)
+                if mon_str in month_index:
+                    found.append((int(yr_str), month_index[mon_str]))
+
+        wb.close()
+
+        if not found:
+            return self._default_name(module)
+
+        latest_year, latest_month = max(found)
+        if latest_month == 12:
+            next_year, next_month = latest_year + 1, 1
+        else:
+            next_year, next_month = latest_year, latest_month + 1
+
+        return f"{module}: NV Contest {calendar.month_name[next_month]} {next_year}"
+
+    @staticmethod
+    def _default_name(module: str) -> str:
+        now = datetime.now()
+        return f"{module}: NV Contest {now.strftime('%B')} {now.year}"
 
     # ---------------------------------------------------------------------- #
     def append_contest(

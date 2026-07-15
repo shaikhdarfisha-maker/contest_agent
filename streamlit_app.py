@@ -19,6 +19,7 @@ import streamlit as st
 from config import APP_PASSWORD, DEFAULT_PROGRAM, PROGRAMS
 from modules.orchestrator import create_contest
 from modules.library_reader import LibraryReader
+from modules.tracker import ContestTracker
 
 _DEFAULT_LIB = "— NV Contests (default) —"
 
@@ -92,10 +93,26 @@ with sel_col2:
         placeholder="Type to search…",
     )
 
+# Suggest next contest name based on tracker history
+@st.cache_data
+def _suggest_name(mod: str) -> str:
+    try:
+        return ContestTracker().suggest_next_name(mod)
+    except Exception:
+        return mod
+
+suggested_name = _suggest_name(module) if module else ""
+if suggested_name:
+    st.caption(f"Suggested contest name: **{suggested_name}**")
+
 with st.form("contest_form"):
     col1, col2 = st.columns(2)
     with col1:
-        contest_name = st.text_input("Contest Name", placeholder="Advanced DSA 4 July Contest")
+        contest_name = st.text_input(
+            "Contest Name",
+            value=suggested_name,
+            placeholder="Advanced DSA 4 July Contest",
+        )
         start_date = st.date_input("Contest Start Date", value=date.today())
         start_time = st.time_input("Contest Start Time", value=time(21, 0))
     with col2:
