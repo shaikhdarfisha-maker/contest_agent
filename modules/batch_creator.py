@@ -106,7 +106,10 @@ class BatchCreator:
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not complete batch clone: {exc}")
 
-        batch_id = self._extract_batch_id(batch_name)
+        # Navigate back to find the new batch and extract its id.
+        self.page.goto(URLS["admin_batches"])
+        raw_id = self._find_existing_batch(batch_name)
+        batch_id = raw_id if raw_id else None
         log.info("Batch created via clone: %s (id=%s)", batch_name, batch_id)
         return BatchResult(batch_name=batch_name, batch_id=batch_id)
 

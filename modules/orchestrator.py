@@ -98,7 +98,6 @@ class ContestOrchestrator:
         *,
         browser: bool = True,
         dry_run_tracker: bool = False,
-        skip_batch_creation: bool = False,
         progress: Optional[ProgressCallback] = None,
     ) -> ContestOutcome:
         """Execute the workflow. Returns a structured outcome (never raises)."""
@@ -151,7 +150,6 @@ class ContestOrchestrator:
             if browser:
                 schedule_result = self._run_browser_steps(
                     request, library, batch_name, windows, emit, contest_db_id,
-                    skip_batch_creation=skip_batch_creation,
                 )
                 outcome.test_ids = schedule_result.test_ids
                 outcome.contest_id = schedule_result.contest_test_id
@@ -227,22 +225,17 @@ class ContestOrchestrator:
         windows: list[AttemptWindow],
         emit: Callable[..., None],
         contest_db_id: Optional[int],
-        *,
-        skip_batch_creation: bool = False,
     ) -> ScheduleResult:
         """Steps 4-7 inside a managed browser session."""
         with BrowserManager() as bm:
             page = bm.page
 
-            # Step 4: create batch (Admin V2).
-            if skip_batch_creation:
-                emit("batch", f"Batch creation skipped — using existing batch '{batch_name}'")
-            else:
-                emit("batch", f"Creating batch '{batch_name}' in Admin V2")
-                batch = BatchCreator(page).create_batch(batch_name)
-                if contest_db_id is not None:
-                    self.store.update_contest(contest_db_id, batch_id=batch.batch_id)
-                emit("batch", f"Batch created (id={batch.batch_id})")
+            # Step 4: create batch (Admin V2) — auto-reuses if already exists.
+            emit("batch", f"Creating batch '{batch_name}' in Admin V2")
+            batch = BatchCreator(page).create_batch(batch_name)
+            if contest_db_id is not None:
+                self.store.update_contest(contest_db_id, batch_id=batch.batch_id)
+            emit("batch", f"Batch created (id={batch.batch_id})")
 
             # Step 5: schedule class (CCT).
             emit("schedule", "Scheduling class in CCT")
@@ -330,7 +323,6 @@ def create_contest(
     batch_name_override: Optional[str] = None,
     browser: bool = True,
     dry_run_tracker: bool = False,
-    skip_batch_creation: bool = False,
     progress: Optional[ProgressCallback] = None,
 ) -> ContestOutcome:
     """One-call helper used by the CLI/UI."""
@@ -347,6 +339,5 @@ def create_contest(
         request,
         browser=browser,
         dry_run_tracker=dry_run_tracker,
-        skip_batch_creation=skip_batch_creation,
         progress=progress,
     )
