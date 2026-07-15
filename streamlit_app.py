@@ -29,7 +29,7 @@ with st.form("contest_form"):
     with col1:
         module = st.text_input("Module Name", placeholder="Advanced DSA 4")
         program = st.selectbox(
-            "Program", options=list(PROGRAMS.keys()), index=list(PROGRAMS).index(DEFAULT_PROGRAM)
+            "Program", options=list(PROGRAMS.keys()), index=list(PROGRAMS.keys()).index(DEFAULT_PROGRAM)
         )
         start_date = st.date_input("Contest Start Date")
         start_time = st.time_input("Contest Start Time", value=time(21, 0))

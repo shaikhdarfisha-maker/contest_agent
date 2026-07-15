@@ -25,11 +25,20 @@ def main() -> None:
     with BrowserManager(headless=False) as bm:
         bm.page.goto(URLS["admin_batches"])
         print(
-            "\nComplete the Scaler login in the opened browser window.\n"
-            "Once you can see the Admin V2 batches page, return here and press "
-            "Enter to save the session..."
+            "\nStep 1: Complete the Scaler login in the opened browser window.\n"
+            "Once you can see the Admin V2 batches page, press Enter to continue..."
         )
         input()
+
+        # Also authenticate the CCT (uses edit-super-batch, same URL as the agent).
+        bm.page.goto("https://www.scaler.com/scm/classes/edit-super-batch")
+        print(
+            "\nStep 2: The browser has opened the CCT page.\n"
+            "If prompted to log in again, complete it. Once you can see the\n"
+            "CCT page (with a 'Schedule Classes' link on the left), press Enter..."
+        )
+        input()
+
         bm.save_auth()
         print("Auth state saved. Future runs will reuse this session.")
 

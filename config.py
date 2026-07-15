@@ -79,9 +79,20 @@ PROGRAMS: dict[str, SheetSpec] = {
         link_col="Link",
         status_col="CC",
     ),
-    # DSML libraries are not a sheet in the supplied workbook; left here so the
-    # mapping can be extended without touching code elsewhere.
-    # "dsml": SheetSpec(...),
+    "dsml": SheetSpec(
+        sheet_name="DSML Libraries",
+        module_col="Module Name",
+        library_col="Library Name",
+        link_col="Link",
+        status_col="CC",
+    ),
+    "aiml": SheetSpec(
+        sheet_name="AIML Libraries",
+        module_col="Module Name",
+        library_col="Library Name",
+        link_col="Link",
+        status_col="CC",
+    ),
 }
 
 DEFAULT_PROGRAM = os.getenv("DEFAULT_PROGRAM", "academy").lower()

@@ -39,7 +39,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--contest-name", required=True, help="Operator display name")
     p.add_argument("--start", required=True, help="Contest start (e.g. '2026-07-20 21:00')")
     p.add_argument("--end", required=True, help="Contest end (e.g. '2026-07-30 21:00')")
-    p.add_argument("--program", default=DEFAULT_PROGRAM, choices=["academy", "devops", "dsml"])
+    p.add_argument("--program", default=DEFAULT_PROGRAM, choices=["academy", "devops", "dsml", "aiml"])
     p.add_argument("--library-name", default=None, help="Explicit library override (ambiguous modules)")
     p.add_argument("--batch-name-override", default=None, help="Exact batch name (skips auto-naming, e.g. for July label)")
     p.add_argument("--no-browser", action="store_true", help="Skip browser steps (Excel-only)")

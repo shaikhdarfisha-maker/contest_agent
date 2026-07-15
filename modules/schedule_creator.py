@@ -81,9 +81,15 @@ class ScheduleCreator:
         # --- batch react-select ------------------------------------------ #
         try:
             self.page.locator(".css-32j6ly").first.click()
-            self.page.locator("#react-select-3-input").fill(batch_name)
-            # The option shows "<batch name>Primary".
-            self.page.get_by_text(f"{batch_name}Primary").click()
+            # Fill using whichever react-select input is focused after click.
+            self.page.keyboard.type(batch_name)
+            # Wait for at least one option to appear, then click the match.
+            # React-select option IDs are dynamic; match any *-option-* div.
+            self.page.wait_for_selector("[id*='-option-']", timeout=5_000)
+            option = self.page.locator("[id*='-option-']").filter(has_text=batch_name)
+            if option.count() == 0:
+                option = self.page.locator("[class*='option']").filter(has_text=batch_name)
+            option.first.click()
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not select batch '{batch_name}': {exc}")
 
