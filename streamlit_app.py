@@ -16,9 +16,8 @@ from datetime import datetime, date, time
 
 import streamlit as st
 
-from config import APP_PASSWORD, ATTEMPT_DURATIONS, DEFAULT_PROGRAM, PROGRAMS
+from config import APP_PASSWORD, DEFAULT_PROGRAM, PROGRAMS
 from modules.orchestrator import create_contest
-from modules.utils import derive_attempt_windows_by_count
 
 st.set_page_config(page_title="NV Contest Agent", page_icon="🎯", layout="centered")
 
@@ -57,53 +56,6 @@ with col_logout:
         st.session_state["authenticated"] = False
         st.rerun()
 
-# --------------------------------------------------------------------------- #
-# Live windows preview (outside form so it re-renders on widget change)
-# --------------------------------------------------------------------------- #
-_DURATION_LABELS = {
-    1: "1 attempt — contest only (30 days)",
-    2: "2 attempts — contest + 1 re-attempt (15 days each)",
-    3: "3 attempts — contest + 2 re-attempts (7 days each)",
-    4: "4 attempts — contest + 3 re-attempts (7 days each)",
-}
-
-col_a, col_b = st.columns(2)
-with col_a:
-    num_attempts = st.selectbox(
-        "Number of Attempts",
-        options=[1, 2, 3, 4],
-        index=3,
-        format_func=lambda n: _DURATION_LABELS[n],
-    )
-    preview_start_date = st.date_input(
-        "Contest Start Date", value=date.today(), key="preview_date"
-    )
-with col_b:
-    preview_start_time = st.time_input(
-        "Contest Start Time", value=time(21, 0), key="preview_time"
-    )
-
-preview_dt = datetime.combine(preview_start_date, preview_start_time)
-preview_windows = derive_attempt_windows_by_count(preview_dt, num_attempts)
-
-st.caption("**Computed windows** (auto-calculated from start date + attempt count):")
-st.table(
-    [
-        {
-            "Attempt": w.label,
-            "Start": w.start.strftime("%d %b %Y %H:%M"),
-            "End": w.end.strftime("%d %b %Y %H:%M"),
-            "Duration": f"{(w.end - w.start).days} days",
-        }
-        for w in preview_windows
-    ]
-)
-
-st.divider()
-
-# --------------------------------------------------------------------------- #
-# Contest form
-# --------------------------------------------------------------------------- #
 with st.form("contest_form"):
     col1, col2 = st.columns(2)
     with col1:
@@ -111,6 +63,8 @@ with st.form("contest_form"):
         program = st.selectbox(
             "Program", options=list(PROGRAMS.keys()), index=list(PROGRAMS.keys()).index(DEFAULT_PROGRAM)
         )
+        start_date = st.date_input("Contest Start Date", value=date.today())
+        start_time = st.time_input("Contest Start Time", value=time(21, 0))
     with col2:
         contest_name = st.text_input("Contest Name", placeholder="Advanced DSA 4 July Contest")
         library_override = st.text_input(
@@ -132,7 +86,7 @@ if submitted:
         st.error("Module Name and Contest Name are required.")
         st.stop()
 
-    start_dt = datetime.combine(preview_start_date, preview_start_time)
+    start_dt = datetime.combine(start_date, start_time)
 
     steps = {
         "library": "Reading Library",
@@ -157,8 +111,6 @@ if submitted:
             module=module,
             contest_name=contest_name,
             start=start_dt,
-            end=None,
-            num_attempts=num_attempts,
             program=program,
             library_name=library_override or None,
             batch_name_override=contest_name,
@@ -186,7 +138,7 @@ if submitted:
     )
 
     if outcome.windows:
-        st.subheader("Attempt Windows (actual)")
+        st.subheader("Attempt Windows")
         st.table(
             [
                 {
