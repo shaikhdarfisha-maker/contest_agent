@@ -1,14 +1,13 @@
 """
 streamlit_app.py
 ================
-Optional dashboard for the Contest Agent.
+Dashboard for the Contest Agent with a shared-password login gate.
 
 Run with:
     streamlit run streamlit_app.py
 
-Provides the four operator inputs (Module, Contest Name, Start, End), a program
-selector, safety toggles (skip browser / dry-run tracker), and a live progress
-checklist that updates as each workflow step completes.
+Set APP_PASSWORD in .env (or environment) to enable the login screen.
+If APP_PASSWORD is empty, the login screen is skipped.
 """
 
 from __future__ import annotations
@@ -17,12 +16,45 @@ from datetime import datetime, time
 
 import streamlit as st
 
-from config import DEFAULT_PROGRAM, PROGRAMS
+from config import APP_PASSWORD, DEFAULT_PROGRAM, PROGRAMS
 from modules.orchestrator import create_contest
 
 st.set_page_config(page_title="NV Contest Agent", page_icon="🎯", layout="centered")
-st.title("🎯 Neovarsity Contest Creation Agent")
-st.caption("Automates batch creation → CCT scheduling → Hire Test → tracker update.")
+
+
+# --------------------------------------------------------------------------- #
+# Login gate
+# --------------------------------------------------------------------------- #
+def _login_screen() -> None:
+    st.title("🎯 NV Contest Agent")
+    st.subheader("Sign in")
+    with st.form("login_form"):
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Sign in", type="primary")
+    if submitted:
+        if password == APP_PASSWORD:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+
+
+if APP_PASSWORD and not st.session_state.get("authenticated"):
+    _login_screen()
+    st.stop()
+
+
+# --------------------------------------------------------------------------- #
+# Main app
+# --------------------------------------------------------------------------- #
+col_title, col_logout = st.columns([6, 1])
+with col_title:
+    st.title("🎯 Neovarsity Contest Creation Agent")
+    st.caption("Automates batch creation → CCT scheduling → Hire Test → tracker update.")
+with col_logout:
+    if APP_PASSWORD and st.button("Sign out"):
+        st.session_state["authenticated"] = False
+        st.rerun()
 
 with st.form("contest_form"):
     col1, col2 = st.columns(2)
@@ -36,16 +68,18 @@ with st.form("contest_form"):
     with col2:
         contest_name = st.text_input("Contest Name", placeholder="Advanced DSA 4 July Contest")
         library_override = st.text_input(
-            "Library override (optional)", placeholder="Leave blank to auto-resolve"
+            "Library override (optional)", placeholder="Leave blank to use NV Contests"
         )
         end_date = st.date_input("Contest End Date")
         end_time = st.time_input("Contest End Time", value=time(21, 0))
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
         skip_browser = st.checkbox("Skip browser steps (Excel-only)", value=False)
     with c2:
         dry_run = st.checkbox("Dry-run tracker (don't write)", value=False)
+    with c3:
+        overwrite = st.checkbox("Overwrite tracker row", value=False)
 
     submitted = st.form_submit_button("Create Contest", type="primary")
 
@@ -57,7 +91,6 @@ if submitted:
     start_dt = datetime.combine(start_date, start_time)
     end_dt = datetime.combine(end_date, end_time)
 
-    # Live checklist scaffold.
     steps = {
         "library": "Reading Library",
         "plan": "Planning Windows",
@@ -86,6 +119,7 @@ if submitted:
             library_name=library_override or None,
             browser=not skip_browser,
             dry_run_tracker=dry_run,
+            overwrite_tracker=overwrite,
             progress=progress,
         )
 

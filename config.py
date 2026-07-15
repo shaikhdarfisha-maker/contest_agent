@@ -229,6 +229,9 @@ BATCH_CLONE_STRENGTH = os.getenv("BATCH_CLONE_STRENGTH", "1")
 # Library name used when a module has no entry in the library sheet.
 FALLBACK_LIBRARY_NAME = os.getenv("FALLBACK_LIBRARY_NAME", "NV Contests")
 
+# Shared password for the Streamlit UI. Set via APP_PASSWORD env var.
+APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+
 # CCT schedule-slot labels. The slot chosen depends on the day the agent runs:
 #   - MWF   if today is Monday / Wednesday / Friday
 #   - T-Th-Sat otherwise
