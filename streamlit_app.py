@@ -67,17 +67,38 @@ with col_logout:
         st.session_state["authenticated"] = False
         st.rerun()
 
+# Program + module selectors live outside the form so the module list
+# updates immediately when the program is changed.
+sel_col1, sel_col2 = st.columns(2)
+with sel_col1:
+    program = st.selectbox(
+        "Program",
+        options=list(PROGRAMS.keys()),
+        index=list(PROGRAMS.keys()).index(DEFAULT_PROGRAM),
+    )
+with sel_col2:
+    @st.cache_data
+    def _load_module_names(prog: str) -> list[str]:
+        try:
+            return LibraryReader().all_module_names(prog)
+        except Exception:
+            return []
+
+    module_options = _load_module_names(program)
+    module = st.selectbox(
+        "Module Name",
+        options=module_options,
+        index=None,
+        placeholder="Type to search…",
+    )
+
 with st.form("contest_form"):
     col1, col2 = st.columns(2)
     with col1:
-        module = st.text_input("Module Name", placeholder="Advanced DSA 4")
-        program = st.selectbox(
-            "Program", options=list(PROGRAMS.keys()), index=list(PROGRAMS.keys()).index(DEFAULT_PROGRAM)
-        )
+        contest_name = st.text_input("Contest Name", placeholder="Advanced DSA 4 July Contest")
         start_date = st.date_input("Contest Start Date", value=date.today())
         start_time = st.time_input("Contest Start Time", value=time(21, 0))
     with col2:
-        contest_name = st.text_input("Contest Name", placeholder="Advanced DSA 4 July Contest")
         lib_options = [_DEFAULT_LIB] + _load_library_names()
         library_sel = st.selectbox("Library override (optional)", options=lib_options)
         library_override = None if library_sel == _DEFAULT_LIB else library_sel
