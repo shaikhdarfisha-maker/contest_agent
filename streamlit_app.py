@@ -82,14 +82,6 @@ with st.form("contest_form"):
         library_sel = st.selectbox("Library override (optional)", options=lib_options)
         library_override = None if library_sel == _DEFAULT_LIB else library_sel
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        skip_browser = st.checkbox("Skip browser steps (Excel-only)", value=False)
-    with c2:
-        dry_run = st.checkbox("Dry-run tracker (don't write)", value=False)
-    with c3:
-        overwrite = st.checkbox("Overwrite tracker row", value=False)
-
     submitted = st.form_submit_button("Create Contest", type="primary")
 
 if submitted:
@@ -125,9 +117,9 @@ if submitted:
             program=program,
             library_name=library_override,
             batch_name_override=contest_name,
-            browser=not skip_browser,
-            dry_run_tracker=dry_run,
-            overwrite_tracker=overwrite,
+            browser=True,
+            dry_run_tracker=False,
+            overwrite_tracker=True,
             progress=progress,
         )
 
