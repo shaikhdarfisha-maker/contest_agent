@@ -39,12 +39,12 @@ from modules.schedule_creator import ScheduleCreator, ScheduleResult
 from modules.tracker import ContestTracker
 
 
-def _build_tracker():
+def _build_tracker(program: str = "academy"):
     """Return GoogleContestTracker when configured, else the Excel tracker."""
     if GOOGLE_SHEET_ID:
         try:
             from modules.google_tracker import GoogleContestTracker
-            return GoogleContestTracker()
+            return GoogleContestTracker(program=program)
         except Exception as exc:
             log.warning("Google Sheet unavailable (%s) — falling back to Excel tracker", exc)
     return ContestTracker()
@@ -100,8 +100,9 @@ class ContestOrchestrator:
         tracker: Optional[ContestTracker] = None,
         store: Optional[MetadataStore] = None,
     ) -> None:
+        self._program_hint: str = "academy"  # updated in run() before tracker is used
         self.library_reader = library_reader or LibraryReader()
-        self.tracker = tracker or _build_tracker()
+        self._tracker_override = tracker
         self.store = store or MetadataStore()
 
     # ------------------------------------------------------------------ #
@@ -123,6 +124,7 @@ class ContestOrchestrator:
             if progress:
                 progress(step, msg, ok)
 
+        tracker = self._tracker_override or _build_tracker(request.program)
         outcome = ContestOutcome(success=False)
         contest_db_id: Optional[int] = None
 
@@ -181,7 +183,7 @@ class ContestOrchestrator:
 
             # -- Step 8: tracker append ----------------------------------- #
             emit("tracker", "Updating NV Contest Tracker")
-            row = self.tracker.append_contest(
+            row = tracker.append_contest(
                 module=request.module,
                 batch_name=batch_name,
                 windows=windows,

@@ -30,6 +30,7 @@ from config import (
     GOOGLE_SERVICE_ACCOUNT_JSON,
     GOOGLE_SHEET_ID,
     GOOGLE_SHEET_NAME,
+    GOOGLE_SHEET_NAMES,
     TRACKER_COLS,
     TRACKER_FIRST_DATA_ROW,
 )
@@ -55,7 +56,7 @@ class GoogleContestTracker:
     def __init__(
         self,
         sheet_id: str = GOOGLE_SHEET_ID,
-        sheet_name: str = GOOGLE_SHEET_NAME,
+        program: str = "academy",
         creds_path: str = GOOGLE_SERVICE_ACCOUNT_JSON,
     ) -> None:
         if not sheet_id:
@@ -66,10 +67,13 @@ class GoogleContestTracker:
             raise TrackerUpdateError(
                 "GOOGLE_SERVICE_ACCOUNT_JSON is not set. Add it to .env."
             )
+        sheet_name = GOOGLE_SHEET_NAMES.get(program.lower(), GOOGLE_SHEET_NAME)
         creds = Credentials.from_service_account_file(creds_path, scopes=_SCOPES)
         client = gspread.authorize(creds)
-        self._ws = client.open_by_key(sheet_id).worksheet(sheet_name)
-        log.info("Google Sheet '%s' opened (id=%s)", sheet_name, sheet_id)
+        sh = client.open_by_key(sheet_id)
+        self._ws = sh.worksheet(sheet_name)
+        self._program = program
+        log.info("Google Sheet '%s' opened for program '%s'", sheet_name, program)
 
     # ------------------------------------------------------------------ #
     def _all_rows(self) -> list[list[str]]:

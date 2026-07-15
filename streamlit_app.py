@@ -96,16 +96,16 @@ with sel_col2:
 
 # Suggest next contest name based on tracker history (Google Sheet preferred)
 @st.cache_data
-def _suggest_name(mod: str) -> str:
+def _suggest_name(mod: str, prog: str) -> str:
     try:
         if GOOGLE_SHEET_ID:
             from modules.google_tracker import GoogleContestTracker
-            return GoogleContestTracker().suggest_next_name(mod)
+            return GoogleContestTracker(program=prog).suggest_next_name(mod)
         return ContestTracker().suggest_next_name(mod)
     except Exception:
         return mod
 
-suggested_name = _suggest_name(module) if module else ""
+suggested_name = _suggest_name(module, program) if module else ""
 if suggested_name:
     st.caption(f"Suggested contest name: **{suggested_name}**")
 

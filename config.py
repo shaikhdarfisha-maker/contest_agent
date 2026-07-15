@@ -252,11 +252,21 @@ APP_PASSWORD = os.getenv("APP_PASSWORD", "")
 # Google Sheets tracker (optional — used when GOOGLE_SHEET_ID is set)
 # --------------------------------------------------------------------------- #
 GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "")
-GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", TRACKER_SHEET.strip())
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv(
     "GOOGLE_SERVICE_ACCOUNT_JSON",
     str(DATA_DIR / "service_account.json"),
 )
+
+# Tab name per program in the Google Sheet.
+GOOGLE_SHEET_NAMES: dict[str, str] = {
+    "academy": os.getenv("GOOGLE_SHEET_NAME_ACADEMY", "Academy New Contests "),
+    "dsml":    os.getenv("GOOGLE_SHEET_NAME_DSML",    "DSML Contests"),
+    "devops":  os.getenv("GOOGLE_SHEET_NAME_DEVOPS",  "DevOps Contests"),
+    "aiml":    os.getenv("GOOGLE_SHEET_NAME_AIML",    "AIML Contests"),
+}
+
+# Keep a single fallback for non-program-aware callers.
+GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", "Academy New Contests ")
 
 # CCT schedule-slot labels. The slot chosen depends on the day the agent runs:
 #   - MWF   if today is Monday / Wednesday / Friday
