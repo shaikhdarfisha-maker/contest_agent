@@ -19,6 +19,7 @@ from modules.library_reader import LibraryReader
 from modules.metadata_store import MetadataStore
 from modules.orchestrator import create_contest
 from modules.tracker import ContestTracker
+from modules.utils import derive_attempt_windows_by_count
 
 st.set_page_config(page_title="NV Contest Agent", page_icon="🎯", layout="wide")
 
@@ -96,114 +97,165 @@ tab_create, tab_history = st.tabs(["Create Contest", "Run History"])
 # Tab 1: Create Contest
 # --------------------------------------------------------------------------- #
 with tab_create:
-    # Program + module outside the form so module list refreshes on program change
-    sel_col1, sel_col2 = st.columns(2)
-    with sel_col1:
-        program = st.selectbox(
-            "Program",
-            options=list(PROGRAMS.keys()),
-            index=list(PROGRAMS.keys()).index(DEFAULT_PROGRAM),
-        )
-    with sel_col2:
-        module_options = _load_module_names(program)
-        module = st.selectbox(
-            "Module Name",
-            options=module_options,
-            index=None,
-            placeholder="Type to search…",
+    pending = st.session_state.get("pending")
+
+    # ---- CONFIRMATION PREVIEW -------------------------------------------- #
+    if pending:
+        st.subheader("Review before creating")
+        st.caption("Check the details below, then confirm to start the automation.")
+
+        windows = derive_attempt_windows_by_count(
+            pending["start_dt"], num_attempts=4
         )
 
-    suggested_name = _suggest_name(module, program) if module else ""
-    if suggested_name:
-        st.caption(f"Suggested: **{suggested_name}**")
+        p1, p2 = st.columns(2)
+        with p1:
+            st.markdown(f"**Batch Name:** {pending['contest_name']}")
+            st.markdown(f"**Module:** {pending['module']}")
+            st.markdown(f"**Program:** {pending['program'].upper()}")
+            st.markdown(f"**Library:** {pending['library_override'] or 'NV Contests (default)'}")
+            st.markdown(f"**Start:** {pending['start_dt'].strftime('%d %b %Y %H:%M')}")
+        with p2:
+            st.markdown("**Attempt Windows:**")
+            st.table([
+                {
+                    "Attempt":  w.label,
+                    "Start":    w.start.strftime("%d %b %Y"),
+                    "End":      w.end.strftime("%d %b %Y"),
+                    "Duration": f"{(w.end - w.start).days}d",
+                }
+                for w in windows
+            ])
 
-    with st.form("contest_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            contest_name = st.text_input(
-                "Contest Name",
-                value=suggested_name,
-                placeholder="Advanced DSA 4 July Contest",
+        st.divider()
+        btn_confirm, btn_edit = st.columns([1, 5])
+        confirmed = btn_confirm.button("Confirm & Create", type="primary")
+        cancelled = btn_edit.button("Edit")
+
+        if cancelled:
+            st.session_state.pop("pending", None)
+            st.rerun()
+
+        if confirmed:
+            steps = {
+                "library":    "Reading Library",
+                "plan":       "Planning Windows",
+                "batch":      "Creating Batch",
+                "schedule":   "Scheduling Class",
+                "hire_update":"Updating Hire Test",
+                "tracker":    "Updating Tracker",
+                "done":       "Completed",
+            }
+            placeholders = {k: st.empty() for k in steps}
+            for k, label in steps.items():
+                placeholders[k].markdown(f"⬜ {label}")
+
+            def progress(step: str, msg: str, ok: bool) -> None:
+                if step in placeholders:
+                    icon = "✅" if ok else "❌"
+                    placeholders[step].markdown(f"{icon} {steps[step]}")
+
+            with st.spinner("Running workflow…"):
+                outcome = create_contest(
+                    module=pending["module"],
+                    contest_name=pending["contest_name"],
+                    start=pending["start_dt"],
+                    program=pending["program"],
+                    library_name=pending["library_override"],
+                    batch_name_override=pending["contest_name"],
+                    browser=True,
+                    dry_run_tracker=False,
+                    overwrite_tracker=True,
+                    progress=progress,
+                )
+
+            st.session_state.pop("pending", None)
+
+            if outcome.success:
+                st.success("Contest Successfully Created")
+            else:
+                st.error(f"Failed: {outcome.error}")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                st.subheader("Summary")
+                st.json({
+                    "Batch Name":         outcome.batch_name,
+                    "Library Used":       outcome.library_used,
+                    "Contest ID":         outcome.contest_id,
+                    "Test IDs":           outcome.test_ids,
+                    "Tracker Row":        outcome.tracker_row,
+                    "Execution Time (s)": outcome.execution_seconds,
+                })
+            with c2:
+                if outcome.windows:
+                    st.subheader("Attempt Windows")
+                    st.table([
+                        {
+                            "Attempt":  w.label,
+                            "Start":    w.start.strftime("%d %b %Y %H:%M"),
+                            "End":      w.end.strftime("%d %b %Y %H:%M"),
+                            "Duration": f"{(w.end - w.start).days}d",
+                        }
+                        for w in outcome.windows
+                    ])
+
+            _suggest_name.clear()
+
+    # ---- INPUT FORM ------------------------------------------------------- #
+    else:
+        # Program + module outside form so module list refreshes on program change
+        sel_col1, sel_col2 = st.columns(2)
+        with sel_col1:
+            program = st.selectbox(
+                "Program",
+                options=list(PROGRAMS.keys()),
+                index=list(PROGRAMS.keys()).index(DEFAULT_PROGRAM),
+                key="form_program",
             )
-            start_date = st.date_input("Contest Start Date", value=date.today())
-            start_time = st.time_input("Contest Start Time", value=time(21, 0))
-        with col2:
-            lib_options = [_DEFAULT_LIB] + _load_library_names()
-            library_sel = st.selectbox("Library override (optional)", options=lib_options)
-            library_override = None if library_sel == _DEFAULT_LIB else library_sel
-
-        submitted = st.form_submit_button("Create Contest", type="primary")
-
-    if submitted:
-        if not module or not contest_name:
-            st.error("Module Name and Contest Name are required.")
-            st.stop()
-
-        start_dt = datetime.combine(start_date, start_time)
-
-        steps = {
-            "library": "Reading Library",
-            "plan":    "Planning Windows",
-            "batch":   "Creating Batch",
-            "schedule":"Scheduling Class",
-            "hire_update": "Updating Hire Test",
-            "tracker": "Updating Tracker",
-            "done":    "Completed",
-        }
-        placeholders = {k: st.empty() for k in steps}
-        for k, label in steps.items():
-            placeholders[k].markdown(f"⬜ {label}")
-
-        def progress(step: str, msg: str, ok: bool) -> None:
-            if step in placeholders:
-                icon = "✅" if ok else "❌"
-                placeholders[step].markdown(f"{icon} {steps[step]}")
-
-        with st.spinner("Running workflow…"):
-            outcome = create_contest(
-                module=module,
-                contest_name=contest_name,
-                start=start_dt,
-                program=program,
-                library_name=library_override,
-                batch_name_override=contest_name,
-                browser=True,
-                dry_run_tracker=False,
-                overwrite_tracker=True,
-                progress=progress,
+        with sel_col2:
+            module_options = _load_module_names(program)
+            module = st.selectbox(
+                "Module Name",
+                options=module_options,
+                index=None,
+                placeholder="Type to search…",
+                key="form_module",
             )
 
-        if outcome.success:
-            st.success("Contest Successfully Created")
-        else:
-            st.error(f"Failed: {outcome.error}")
+        suggested_name = _suggest_name(module, program) if module else ""
+        if suggested_name:
+            st.caption(f"Suggested: **{suggested_name}**")
 
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("Summary")
-            st.json({
-                "Batch Name":       outcome.batch_name,
-                "Library Used":     outcome.library_used,
-                "Contest ID":       outcome.contest_id,
-                "Test IDs":         outcome.test_ids,
-                "Tracker Row":      outcome.tracker_row,
-                "Execution Time (s)": outcome.execution_seconds,
-            })
-        with c2:
-            if outcome.windows:
-                st.subheader("Attempt Windows")
-                st.table([
-                    {
-                        "Attempt":  w.label,
-                        "Start":    w.start.strftime("%d %b %Y %H:%M"),
-                        "End":      w.end.strftime("%d %b %Y %H:%M"),
-                        "Duration": f"{(w.end - w.start).days}d",
-                    }
-                    for w in outcome.windows
-                ])
+        with st.form("contest_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                contest_name = st.text_input(
+                    "Contest Name",
+                    value=suggested_name,
+                    placeholder="Advanced DSA 4 July Contest",
+                )
+                start_date = st.date_input("Contest Start Date", value=date.today())
+                start_time = st.time_input("Contest Start Time", value=time(21, 0))
+            with col2:
+                lib_options = [_DEFAULT_LIB] + _load_library_names()
+                library_sel = st.selectbox("Library override (optional)", options=lib_options)
+                library_override = None if library_sel == _DEFAULT_LIB else library_sel
 
-        # Invalidate suggestion cache so next open shows updated month
-        _suggest_name.clear()
+            submitted = st.form_submit_button("Preview & Confirm", type="primary")
+
+        if submitted:
+            if not module or not contest_name:
+                st.error("Module Name and Contest Name are required.")
+            else:
+                st.session_state["pending"] = {
+                    "module":           module,
+                    "contest_name":     contest_name,
+                    "program":          program,
+                    "library_override": library_override,
+                    "start_dt":         datetime.combine(start_date, start_time),
+                }
+                st.rerun()
 
 
 # --------------------------------------------------------------------------- #
