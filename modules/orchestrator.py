@@ -98,6 +98,7 @@ class ContestOrchestrator:
         *,
         browser: bool = True,
         dry_run_tracker: bool = False,
+        overwrite_tracker: bool = False,
         progress: Optional[ProgressCallback] = None,
     ) -> ContestOutcome:
         """Execute the workflow. Returns a structured outcome (never raises)."""
@@ -166,6 +167,7 @@ class ContestOrchestrator:
                 batch_name=batch_name,
                 windows=windows,
                 dry_run=dry_run_tracker,
+                overwrite=overwrite_tracker,
             )
             outcome.tracker_row = row
             if contest_db_id is not None:
@@ -198,24 +200,36 @@ class ContestOrchestrator:
     # ------------------------------------------------------------------ #
     def _resolve_library(self, request: ContestRequest) -> LibraryMatch:
         if request.library_name:
-            return self.library_reader.resolve_explicit(
-                request.program, request.module, request.library_name
-            )
-        try:
-            return self.library_reader.resolve(request.program, request.module)
-        except (LibraryNotFoundError, AmbiguousLibraryError):
-            log.warning(
-                "Library not found for module '%s'; falling back to '%s'",
-                request.module,
-                FALLBACK_LIBRARY_NAME,
-            )
-            return LibraryMatch(
-                module=request.module,
-                program=request.program,
-                library_name=FALLBACK_LIBRARY_NAME,
-                library_link=None,
-                library_id=None,
-            )
+            # Operator specified a library — try Excel first, else use as
+            # a direct CCT library name.
+            try:
+                return self.library_reader.resolve_explicit(
+                    request.program, request.module, request.library_name
+                )
+            except LibraryNotFoundError:
+                log.warning(
+                    "Library '%s' not in Excel; using as direct CCT library name",
+                    request.library_name,
+                )
+                return LibraryMatch(
+                    module=request.module,
+                    program=request.program,
+                    library_name=request.library_name,
+                    library_link=None,
+                    library_id=None,
+                )
+
+        # Default: use NV Contests — most module contests live there.
+        # The CCT checkbox logic will match the right class by module name.
+        # Pass --library-name to override with an Excel-specific library.
+        log.info("Using default library: %s", FALLBACK_LIBRARY_NAME)
+        return LibraryMatch(
+            module=request.module,
+            program=request.program,
+            library_name=FALLBACK_LIBRARY_NAME,
+            library_link=None,
+            library_id=None,
+        )
 
     def _run_browser_steps(
         self,
@@ -323,6 +337,7 @@ def create_contest(
     batch_name_override: Optional[str] = None,
     browser: bool = True,
     dry_run_tracker: bool = False,
+    overwrite_tracker: bool = False,
     progress: Optional[ProgressCallback] = None,
 ) -> ContestOutcome:
     """One-call helper used by the CLI/UI."""
@@ -339,5 +354,6 @@ def create_contest(
         request,
         browser=browser,
         dry_run_tracker=dry_run_tracker,
+        overwrite_tracker=overwrite_tracker,
         progress=progress,
     )

@@ -142,11 +142,11 @@ class ScheduleCreator:
             )
 
         # --- mandatory skill evaluation checkbox ------------------------- #
-        # Rule: tick the first class whose label contains 'contest' or 'test'
-        # but NOT 'discussion'. Covers both DSA ("Mandatory Skill Evaluation
-        # Test") and non-DSA ("Backend LLD: Contest - 1: ...") libraries.
+        # Rule: tick the class whose label contains 'contest' or 'test' but
+        # NOT 'discussion'. When the library has many contest classes (e.g.
+        # NV Contests), prefer the one that also matches the module name.
         try:
-            self._check_skill_eval_checkbox()
+            self._check_skill_eval_checkbox(preferred_name=library.module)
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not tick Mandatory Skill Eval: {exc}")
 
@@ -302,15 +302,15 @@ class ScheduleCreator:
         return result
 
     # ------------------------------------------------------------------ #
-    def _check_skill_eval_checkbox(self) -> None:
+    def _check_skill_eval_checkbox(self, preferred_name: str = "") -> None:
         """
         Tick the class that represents the contest or skill-eval test for this
-        library. Rule (user-supplied): the label must contain 'contest' OR
-        'test' (case-insensitive) and must NOT contain 'discussion'.
+        library. Rule: the label must contain 'contest' OR 'test' (case-insensitive)
+        and must NOT contain 'discussion'.
 
-        Works for DSA libraries ("DSA: Mandatory Skill Evaluation Test") and
-        non-DSA libraries ("Backend LLD: Contest - 1: Java, OOP, and Concurrency").
-        The class list loads async after library selection and may be virtualized.
+        When preferred_name is given (the module name), prefer a label that also
+        contains it — handles NV Contests library which has one class per module.
+        Falls back to the first matching label if no preferred match is found.
         """
         import re as _re
 
@@ -332,6 +332,11 @@ class ScheduleCreator:
                 .filter(has_text=want)
                 .filter(has_not_text=avoid)
             )
+            # If a module-specific preferred name is given, try it first.
+            if preferred_name and labels.count() > 1:
+                preferred = labels.filter(has_text=preferred_name)
+                if preferred.count() > 0:
+                    labels = preferred
             if labels.count() > 0:
                 lbl = labels.first
                 for_id = lbl.get_attribute("for")

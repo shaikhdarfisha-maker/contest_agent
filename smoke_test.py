@@ -57,9 +57,9 @@ def main() -> int:
     except LibraryNotFoundError:
         check("not-found raises", True)
 
-    print(f"Orchestrator fallback (unknown module -> '{FALLBACK_LIBRARY_NAME}', browser=False dry-run)")
+    print(f"Orchestrator default library (no --library-name -> '{FALLBACK_LIBRARY_NAME}', browser=False dry-run)")
     outcome = create_contest(
-        module="Nonexistent Module XYZ",
+        module="Advanced DSA 4",
         contest_name="Test Contest",
         start="2026-09-01 21:00",
         end="2026-09-10 21:00",
@@ -67,8 +67,22 @@ def main() -> int:
         browser=False,
         dry_run_tracker=True,
     )
-    check("orchestrator succeeds with fallback library", outcome.success)
-    check(f"orchestrator used '{FALLBACK_LIBRARY_NAME}'", outcome.library_used == FALLBACK_LIBRARY_NAME)
+    check(f"orchestrator defaults to '{FALLBACK_LIBRARY_NAME}'", outcome.library_used == FALLBACK_LIBRARY_NAME)
+    check("orchestrator succeeds", outcome.success)
+
+    print("Orchestrator explicit library override (--library-name uses Excel)")
+    outcome2 = create_contest(
+        module="Advanced DSA 4",
+        contest_name="Test Contest 2",
+        start="2026-09-01 21:00",
+        end="2026-09-10 21:00",
+        program="academy",
+        library_name="Academy: Advanced DSA (Int/Adv)",
+        browser=False,
+        dry_run_tracker=True,
+    )
+    check("explicit library override resolves from Excel", outcome2.library_used == "Academy: Advanced DSA (Int/Adv)")
+    check("orchestrator succeeds with explicit library", outcome2.success)
 
     print("Re-attempt derivation (matches Advanced DSA 4 screenshot)")
     wins = derive_attempt_windows(

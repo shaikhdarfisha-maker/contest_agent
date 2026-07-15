@@ -113,6 +113,30 @@ class ContestTracker:
             "Propagated K-N formulas from row %d to row %d", ref_row, target_row
         )
 
+    def _find_row(self, ws: Worksheet, batch_name: str) -> Optional[int]:
+        """Return the 1-based row index of an existing entry, or None."""
+        b_col = TRACKER_COLS["batch_name"]
+        a_col = TRACKER_COLS["module"]
+        target = batch_name.strip().lower()
+        for row in range(TRACKER_FIRST_DATA_ROW, ws.max_row + 1):
+            val = ws.cell(row=row, column=b_col).value
+            if not isinstance(val, str):
+                continue
+            if val.strip().startswith("="):
+                module_val = ws.cell(row=row, column=a_col).value
+                suffix = ""
+                if '"' in val:
+                    parts = val.split('"')
+                    if len(parts) >= 2:
+                        suffix = parts[1].lstrip(": ").strip()
+                if module_val:
+                    reconstructed = f"{str(module_val).strip()}: {suffix}".lower()
+                    if reconstructed == target:
+                        return row
+            elif val.strip().lower() == target:
+                return row
+        return None
+
     def _row_exists(self, ws: Worksheet, batch_name: str) -> bool:
         """
         Duplicate detection. The Batch Name column often holds a CONCATENATE
@@ -155,6 +179,7 @@ class ContestTracker:
         use_concatenate_formula: bool = False,  # default: plain-text batch name
         propagate_formulas: bool = True,
         dry_run: bool = False,
+        overwrite: bool = False,
     ) -> int:
         """
         Append one contest row. Returns the 1-based row index written.
@@ -174,15 +199,19 @@ class ContestTracker:
             )
         ws = wb[self.sheet_name]
 
-        if self._row_exists(ws, batch_name):
-            raise DuplicateContestError(
-                f"A row for batch '{batch_name}' already exists in "
-                f"'{self.sheet_name}'."
+        existing_row = self._find_row(ws, batch_name)
+        if existing_row is not None:
+            if not overwrite:
+                raise DuplicateContestError(
+                    f"A row for batch '{batch_name}' already exists in "
+                    f"'{self.sheet_name}'."
+                )
+            log.warning("Overwriting existing tracker row %d for '%s'", existing_row, batch_name)
+            row = existing_row
+        else:
+            row = self._first_empty_row(
+                ws, TRACKER_COLS["module"], TRACKER_FIRST_DATA_ROW
             )
-
-        row = self._first_empty_row(
-            ws, TRACKER_COLS["module"], TRACKER_FIRST_DATA_ROW
-        )
 
         # Column A: module name (exactly as ops enter it).
         ws.cell(row=row, column=TRACKER_COLS["module"], value=module)

@@ -44,6 +44,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--batch-name-override", default=None, help="Exact batch name (skips auto-naming, e.g. for July label)")
     p.add_argument("--no-browser", action="store_true", help="Skip browser steps (Excel-only)")
     p.add_argument("--dry-run-tracker", action="store_true", help="Do not write the tracker")
+    p.add_argument("--overwrite-tracker", action="store_true", help="Overwrite existing tracker row if it already exists")
     return p.parse_args(argv)
 
 
@@ -78,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         batch_name_override=args.batch_name_override,
         browser=not args.no_browser,
         dry_run_tracker=args.dry_run_tracker,
-
+        overwrite_tracker=args.overwrite_tracker,
         progress=lambda step, msg, ok: None,  # logger already prints
     )
     _print_summary(outcome)
