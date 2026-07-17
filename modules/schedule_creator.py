@@ -157,20 +157,43 @@ class ScheduleCreator:
             raise BrowserStepError(f"Could not tick Mandatory Skill Eval: {exc}")
 
         # --- schedule slot (day-dependent) ------------------------------- #
+        # Try the preferred slot first; if it's not in the dropdown (e.g. today's
+        # 9 PM has already passed and CCT removed it), fall back through all slots.
+        from config import SCHEDULE_SLOT_MWF, SCHEDULE_SLOT_TTHS, SCHEDULE_SLOT_SEARCH_MWF, SCHEDULE_SLOT_SEARCH_TTHS
+        _ALL_SLOTS = [
+            (SCHEDULE_SLOT_MWF,  SCHEDULE_SLOT_SEARCH_MWF),
+            (SCHEDULE_SLOT_TTHS, SCHEDULE_SLOT_SEARCH_TTHS),
+        ]
+        preferred_slot, preferred_search = schedule_slot_for_today()
+        # Put preferred first, then the other as fallback.
+        _slot_candidates = [
+            (preferred_slot, preferred_search),
+            *[(lbl, srch) for lbl, srch in _ALL_SLOTS if lbl != preferred_slot],
+        ]
+        _slot_picked = False
         try:
-            slot_label, slot_search = schedule_slot_for_today()
             self.page.locator(
                 ".Select_root__Gqx23.ClassesScheduleSelect_root__KQfRb > "
                 ".css-127wfx0-control > .css-jlrko8 > .css-32j6ly"
             ).click()
-            self.page.locator("#react-select-5-input").fill(slot_search)
-            self.page.get_by_text(slot_label, exact=True).click()
-            log.info("Selected schedule slot: %s", slot_label)
+            for slot_label, slot_search in _slot_candidates:
+                self.page.locator("#react-select-5-input").fill("")
+                self.page.locator("#react-select-5-input").fill(slot_search)
+                opt = self.page.get_by_text(slot_label, exact=True)
+                if opt.count() > 0:
+                    opt.first.click()
+                    log.info("Selected schedule slot: %s", slot_label)
+                    _slot_picked = True
+                    break
+            if not _slot_picked:
+                raise BrowserStepError("No available schedule slot found in dropdown.")
+        except BrowserStepError:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not select schedule slot: {exc}")
 
         # --- start date calendar ----------------------------------------- #
-        from datetime import date as _date
+        from datetime import date as _date, timedelta as _td
         today = _date.today()
         if start.date() < today:
             raise BrowserStepError(
@@ -179,8 +202,29 @@ class ScheduleCreator:
             )
         try:
             self.page.locator("i").nth(1).click()  # open the calendar
-            day_cell = str(start.day)
-            self.page.get_by_role("gridcell", name=day_cell, exact=True).click()
+            # Try the requested date first; if the cell is disabled (past 9 PM),
+            # advance day by day up to 3 days to find the next available cell.
+            target = start.date()
+            for _ in range(4):
+                day_cell = str(target.day)
+                cell = self.page.get_by_role(
+                    "gridcell", name=day_cell, exact=True
+                ).filter(has_not=self.page.locator("[aria-disabled='true']"))
+                if cell.count() > 0:
+                    cell.first.click()
+                    if target != start.date():
+                        log.warning(
+                            "Start date %s unavailable in CCT calendar; used %s instead.",
+                            start.date(), target,
+                        )
+                    break
+                target += _td(days=1)
+            else:
+                raise BrowserStepError(
+                    f"Could not find an available calendar cell near {start.date()}."
+                )
+        except BrowserStepError:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not set start date: {exc}")
 
