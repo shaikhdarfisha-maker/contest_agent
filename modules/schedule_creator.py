@@ -329,13 +329,16 @@ class ScheduleCreator:
         want  = _re.compile(r"contest|test|neovarsity", _re.I)
         avoid = _re.compile(r"Discussion", _re.I)
 
-        # Wait for the class-list labels specifically (not just any checkbox on
-        # the page). The library dropdown adds async content; the first label
-        # matching our want filter signals that the class list is populated.
+        # Wait for the class list to populate. When preferred_name is given,
+        # wait for any label (the class may not contain "contest"/"neovarsity"
+        # in its name). Otherwise require the want filter to match.
         try:
-            self.page.locator("label").filter(has_text=want).first.wait_for(
-                state="attached", timeout=15_000
+            wait_loc = (
+                self.page.locator("label").filter(has_not_text=avoid)
+                if preferred_name
+                else self.page.locator("label").filter(has_text=want).filter(has_not_text=avoid)
             )
+            wait_loc.first.wait_for(state="attached", timeout=15_000)
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(
                 f"Class-list labels never appeared after library selection: {exc}"
@@ -353,45 +356,41 @@ class ScheduleCreator:
             return "; ".join(names) if names else "(none found)"
 
         def _find_target():
-            # Match via label element text.
-            labels = (
-                self.page.locator("label")
-                .filter(has_text=want)
-                .filter(has_not_text=avoid)
+            pref_lower = preferred_name.lower() if preferred_name else ""
+            pref_pat = (
+                _re.compile(_re.escape(pref_lower) + r"(?!\d)", _re.I)
+                if pref_lower else None
             )
-            # If a module-specific preferred name is given, try to match it.
-            # Multiple classes mean this is NV Contests — picking the wrong
-            # one silently is worse than failing fast.
-            # IMPORTANT: return None (not raise) when not found so the scroll
-            # loop in the caller can load more of the list and retry.
-            lbl = None
-            if preferred_name and labels.count() > 1:
-                # Manually inspect each label's text — avoids has_text filter
-                # issues with special characters like parentheses.
-                pref_lower = preferred_name.lower()
-                # Use (?!\d) so "Module 1" doesn't match "Module 10", "11", etc.
-                pref_pat = _re.compile(
-                    _re.escape(pref_lower) + r"(?!\d)", _re.I
-                )
-                reattempt_re = _re.compile(r"re.?attempt", _re.I)
+            reattempt_re = _re.compile(r"re.?attempt", _re.I)
+
+            if pref_lower:
+                # When preferred_name is given, search ALL non-Discussion labels —
+                # some classes are named without "contest"/"neovarsity" and would be
+                # silently excluded by the want filter.
+                labels = self.page.locator("label").filter(has_not_text=avoid)
                 n = labels.count()
-                found_lbl = None
                 for i in range(n):
                     try:
                         txt = labels.nth(i).inner_text(timeout=500).strip()
-                    except Exception as _e:
-                        log.debug("Label %d inner_text failed: %s", i, _e)
+                    except Exception:
                         continue
                     if not pref_pat.search(txt):
                         continue
                     if reattempt_re.search(txt):
-                        continue  # skip re-attempt variants
-                    found_lbl = labels.nth(i)
-                    break  # first match wins
-                if found_lbl is None:
+                        continue
+                    lbl = labels.nth(i)
+                    break
+                else:
                     return None
-                lbl = found_lbl
-            elif labels.count() > 0:
+            else:
+                # No preferred name — pick the first contest/test/neovarsity class.
+                labels = (
+                    self.page.locator("label")
+                    .filter(has_text=want)
+                    .filter(has_not_text=avoid)
+                )
+                if labels.count() == 0:
+                    return None
                 lbl = labels.first
 
             if lbl is not None:
@@ -434,14 +433,13 @@ class ScheduleCreator:
                 # Avoids stale Playwright locators caused by virtual-scroll DOM recycling.
                 ticked = self.page.evaluate("""
                     async ([preferredName]) => {
-                        const want      = /contest|test|neovarsity/i;
                         const avoid     = /Discussion/i;
                         const noRetry   = /re.?attempt/i;
                         const prefLower = preferredName.toLowerCase();
 
                         const tryClick = () => {
                             const lbls = Array.from(document.querySelectorAll('label'))
-                                .filter(l => want.test(l.innerText) && !avoid.test(l.innerText));
+                                .filter(l => !avoid.test(l.innerText));
                             let found = null;
                             for (const lbl of lbls) {
                                 const txt = lbl.innerText.trim().toLowerCase();
