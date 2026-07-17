@@ -27,23 +27,55 @@ st.set_page_config(
 # --------------------------------------------------------------------------- #
 # Scaler-themed CSS
 # --------------------------------------------------------------------------- #
+# st.html() injects into the parent document (not an iframe), called first on every rerun.
+# Selectors use data-testid / data-baseweb / kind attributes — stable across Streamlit
+# versions and high enough specificity to beat Emotion's generated class names.
 st.html("""
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet">
 <style>
-  html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
-  #MainMenu, footer, header { visibility: hidden; }
-  .stApp { background-color: #F5F6FA; }
+  /* ── Font ─────────────────────────────────────────────────────────────── */
+  html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"],
+  [data-testid="stMain"], [data-testid="stSidebar"],
+  input, select, textarea, button, label, p, span, div {
+    font-family: 'Inter', sans-serif !important;
+  }
+
+  /* ── Hide Streamlit chrome ─────────────────────────────────────────────── */
+  [data-testid="stHeader"],
+  [data-testid="stToolbar"],
+  [data-testid="stDecoration"],
+  #MainMenu, footer { visibility: hidden !important; height: 0 !important; }
+
+  /* ── Page background (belt-and-suspenders over config.toml) ─────────────── */
+  [data-testid="stApp"],
+  [data-testid="stAppViewContainer"],
+  [data-testid="stMain"] > div:first-child {
+    background-color: #F5F6FA !important;
+  }
+
+  /* ── Custom nav bar HTML (our own divs — no Emotion conflict) ─────────── */
   .scaler-nav {
-    background: #1A1A2E; padding: 12px 32px; display: flex;
-    align-items: center; justify-content: space-between;
-    margin: -1rem -1rem 2rem -1rem; border-bottom: 3px solid #FF6B2B;
+    background: #1A1A2E;
+    padding: 12px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: -1rem -1rem 2rem -1rem;
+    border-bottom: 3px solid #FF6B2B;
   }
   .scaler-nav img { height: 32px; }
-  .scaler-nav-title { color: #FFF; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+  .scaler-nav-title { color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
   .scaler-nav-right { color: #94A3B8; font-size: 13px; }
+
+  /* ── Custom card / badge HTML (our own divs) ─────────────────────────── */
   .scaler-card {
-    background: #FFF; border-radius: 12px; border: 1px solid #E2E8F0;
-    padding: 24px 28px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid #E2E8F0;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   }
   .scaler-card-title {
     font-size: 14px; font-weight: 600; color: #64748B; text-transform: uppercase;
@@ -52,35 +84,92 @@ st.html("""
   }
   .section-badge {
     display: inline-block; background: #FFF0E8; color: #FF6B2B; font-size: 11px;
-    font-weight: 700; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.5px;
-    text-transform: uppercase; margin-bottom: 12px;
+    font-weight: 700; padding: 3px 10px; border-radius: 20px;
+    letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 12px;
   }
-  .stButton > button[kind="primary"] {
-    background: #FF6B2B !important; border: none !important; border-radius: 8px !important;
-    color: white !important; font-weight: 600 !important; font-family: 'Inter', sans-serif !important;
-    padding: 10px 24px !important; font-size: 14px !important; transition: background 0.2s !important;
+
+  /* ── Buttons — target the actual <button> element via kind attribute ──── */
+  button[kind="primary"],
+  [data-testid="stBaseButton-primary"] {
+    background-color: #FF6B2B !important;
+    border: none !important;
+    border-radius: 8px !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    transition: background-color 0.2s !important;
   }
-  .stButton > button[kind="primary"]:hover { background: #E85D20 !important; }
-  .stButton > button {
-    border-radius: 8px !important; font-family: 'Inter', sans-serif !important;
-    font-size: 14px !important; font-weight: 500 !important;
+  button[kind="primary"]:hover,
+  [data-testid="stBaseButton-primary"]:hover {
+    background-color: #E85D20 !important;
   }
-  .stTextInput > div > div > input, .stSelectbox > div > div, .stDateInput > div > div > input {
-    border-radius: 8px !important; border-color: #CBD5E1 !important;
-    font-family: 'Inter', sans-serif !important; font-size: 14px !important;
+  button[kind="secondary"],
+  [data-testid="stBaseButton-secondary"] {
+    border-radius: 8px !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
   }
-  .stTabs [data-baseweb="tab-list"] { background: transparent; border-bottom: 2px solid #E2E8F0; gap: 0; }
-  .stTabs [data-baseweb="tab"] {
-    font-family: 'Inter', sans-serif !important; font-weight: 500; font-size: 14px;
-    color: #64748B; padding: 10px 24px; border-radius: 0;
+
+  /* ── Inputs — target via data-testid wrappers ─────────────────────────── */
+  [data-testid="stTextInput"] input,
+  [data-testid="stDateInput"] input {
+    border-radius: 8px !important;
+    border-color: #CBD5E1 !important;
+    font-size: 14px !important;
+    color: #1A1A2E !important;
+    background: #fff !important;
   }
-  .stTabs [aria-selected="true"] { color: #FF6B2B !important; border-bottom: 2px solid #FF6B2B !important; font-weight: 600 !important; }
-  .step-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 14px; color: #475569; border-bottom: 1px solid #F8FAFC; }
+  [data-testid="stSelectbox"] [data-baseweb="select"] > div:first-child {
+    border-radius: 8px !important;
+    border-color: #CBD5E1 !important;
+    font-size: 14px !important;
+    background: #fff !important;
+  }
+
+  /* ── Widget labels — explicit contrast so they're readable ───────────── */
+  [data-testid="stTextInput"] label,
+  [data-testid="stSelectbox"] label,
+  [data-testid="stDateInput"] label,
+  [data-testid="stRadio"] label,
+  [data-testid="stRadio"] span,
+  [data-testid="stForm"] label {
+    color: #1A1A2E !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+  }
+
+  /* ── Tabs — data-baseweb is stable ───────────────────────────────────── */
+  [data-baseweb="tab-list"] {
+    background: transparent !important;
+    border-bottom: 2px solid #E2E8F0 !important;
+    gap: 0 !important;
+  }
+  [data-baseweb="tab"] {
+    font-weight: 500 !important;
+    font-size: 14px !important;
+    color: #64748B !important;
+    padding: 10px 24px !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+  }
+  [data-baseweb="tab"][aria-selected="true"] {
+    color: #FF6B2B !important;
+    border-bottom: 2px solid #FF6B2B !important;
+    font-weight: 600 !important;
+  }
+
+  /* ── Progress steps / chips (our own HTML) ───────────────────────────── */
+  .step-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; font-size: 14px; color: #475569;
+    border-bottom: 1px solid #F8FAFC;
+  }
   .chip-success { background:#DCFCE7; color:#166534; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600; }
   .chip-fail    { background:#FEE2E2; color:#991B1B; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600; }
   .chip-planned { background:#FEF9C3; color:#854D0E; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600; }
-  .stDataFrame { border-radius: 8px; overflow: hidden; }
-  thead tr th { background: #F8FAFC !important; font-size: 12px !important; color: #64748B !important; font-weight: 600 !important; }
+
+  /* ── Misc ─────────────────────────────────────────────────────────────── */
+  [data-testid="stDataFrame"] { border-radius: 8px !important; overflow: hidden !important; }
   hr { border-color: #E2E8F0; margin: 20px 0; }
 </style>
 """)
