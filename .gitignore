@@ -5,5 +5,8 @@ __pycache__/
 data/*.bak_*
 data/contest_agent.sqlite3
 data/storage_state.json
+data/service_account.json
+data/NV_contests_Tracker_Q2-2026_.xlsx
 logs/*.log
 screenshots/*.png
+.DS_Store
