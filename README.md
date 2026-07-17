@@ -62,6 +62,16 @@ The `orchestrator` wires these together; `app.py` (CLI) and `streamlit_app.py`
 - **Library lookup is program-scoped.** The module → CCT library mapping lives
   in `data/Library__All_Programs.xlsx`, one sheet per program. When a module is
   not in the sheet the fallback is **NV Contests**.
+- **Schedule slot selection is automatic.** The agent picks the slot based on
+  the current day, then falls back through all available options if the preferred
+  slot is unavailable (e.g. today's 9 PM has already passed):
+  1. MWF 9 PM *(preferred on Mon/Wed/Fri)*
+  2. TTHS 9 PM *(preferred on Tue/Thu/Sat)*
+  3. MWF 7 AM
+  4. TTHS 7 AM
+- **Past start times are rejected early.** If the contest start datetime has
+  already passed when the agent runs, it fails immediately with a clear message
+  before opening any browser.
 - **A "contest" is four linked tests** (Contest + Re-attempt 1/2/3). The
   operator enters only the **A1** window; the rest are derived:
   - A2: starts when A1 ends (snapped to 00:00), runs **7 days**
