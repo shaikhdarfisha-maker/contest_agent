@@ -93,7 +93,8 @@ def run_all(
     reader = LibraryReader()
     ws = _get_test_worksheet()
 
-    start_dt = datetime.combine(datetime.today(), time(21, 0))
+    from datetime import timedelta
+    start_dt = datetime.combine(datetime.today() + timedelta(days=1), time(21, 0))
     results: list[dict] = []
 
     for prog in programs:
