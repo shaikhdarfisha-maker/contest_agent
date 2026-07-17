@@ -156,6 +156,21 @@ Accepted date formats: `2026-07-20 21:00`, `2026-07-20T21:00`,
 streamlit run streamlit_app.py
 ```
 
+### Public URL via ngrok
+
+To share the dashboard externally (e.g. for the ops team), run:
+
+```bash
+./start.sh
+```
+
+This starts Streamlit on port 8501 and opens a permanent ngrok tunnel at:
+
+**https://shale-unfailing-backyard.ngrok-free.dev/**
+
+Both services stop together when you press `Ctrl+C`. The domain is static —
+the URL never changes between restarts.
+
 ---
 
 ## Library mapping
