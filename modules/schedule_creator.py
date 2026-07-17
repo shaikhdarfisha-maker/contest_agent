@@ -326,7 +326,7 @@ class ScheduleCreator:
         """
         import re as _re
 
-        want  = _re.compile(r"contest|test", _re.I)
+        want  = _re.compile(r"contest|test|neovarsity", _re.I)
         avoid = _re.compile(r"Discussion", _re.I)
 
         # Wait for the async class list to begin rendering.
@@ -358,6 +358,8 @@ class ScheduleCreator:
             # If a module-specific preferred name is given, try to match it.
             # Multiple classes mean this is NV Contests — picking the wrong
             # one silently is worse than failing fast.
+            # IMPORTANT: return None (not raise) when not found so the scroll
+            # loop in the caller can load more of the list and retry.
             if preferred_name and labels.count() > 1:
                 # 1. Exact substring match
                 preferred = labels.filter(has_text=preferred_name)
@@ -380,18 +382,10 @@ class ScheduleCreator:
                         )
                         preferred = fuzzy
 
-                if preferred.count() == 0:
-                    raise BrowserStepError(
-                        f"Module '{preferred_name}' not found in NV Contests library. "
-                        f"Available classes: {_available_class_names(labels)}. "
-                        f"Use the Library override field to specify the correct library."
-                    )
-                if preferred.count() > 1:
-                    raise BrowserStepError(
-                        f"Multiple classes matched '{preferred_name}' in NV Contests: "
-                        f"{_available_class_names(preferred)}. "
-                        f"Use the Library override field to be more specific."
-                    )
+                # Not found yet — return None so the caller scrolls and retries.
+                if preferred.count() == 0 or preferred.count() > 1:
+                    return None
+
                 labels = preferred
             if labels.count() > 0:
                 lbl = labels.first
@@ -440,7 +434,20 @@ class ScheduleCreator:
                     break
 
         if chosen is None:
+            # Build a helpful error listing every class now visible after scrolling.
+            all_labels = (
+                self.page.locator("label")
+                .filter(has_text=want)
+                .filter(has_not_text=avoid)
+            )
+            hint = (
+                f" Available classes: {_available_class_names(all_labels)}."
+                f" Use the Library override field to specify the correct library."
+                if preferred_name else ""
+            )
             raise BrowserStepError(
+                f"Module '{preferred_name}' not found in NV Contests library after scrolling the full list.{hint}"
+                if preferred_name else
                 "Could not find 'Mandatory Skill Evaluation Test' checkbox "
                 "(excluding Contest Discussion) even after scrolling the full list."
             )
