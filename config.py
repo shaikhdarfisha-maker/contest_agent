@@ -313,3 +313,30 @@ def schedule_slot_for_today(today=None) -> tuple[str, str]:
     if d.weekday() in (0, 2, 4):  # Mon, Wed, Fri
         return SCHEDULE_SLOT_MWF, SCHEDULE_SLOT_SEARCH_MWF
     return SCHEDULE_SLOT_TTHS, SCHEDULE_SLOT_SEARCH_TTHS
+
+
+def next_slot_datetime(now=None):
+    """
+    Return the next upcoming contest slot datetime after `now`.
+
+    Slots run Mon–Sat at 7 AM then 9 PM (Sunday has no slot).
+    Example: after Thu 17 Jul 9 PM → Fri 18 Jul 7 AM.
+
+    Returns: datetime of the next slot.
+    """
+    from datetime import datetime as _dt, timedelta as _td, time as _time
+
+    now = now or _dt.now()
+    slot_times = [_time(7, 0), _time(21, 0)]  # 7 AM then 9 PM each day
+
+    for days_ahead in range(8):
+        candidate_date = (now + _td(days=days_ahead)).date()
+        if candidate_date.weekday() == 6:  # skip Sunday
+            continue
+        for t in slot_times:
+            from datetime import datetime as _dt2
+            candidate = _dt2.combine(candidate_date, t)
+            if candidate > now:
+                return candidate
+
+    return now + _td(days=1)  # fallback: tomorrow same time

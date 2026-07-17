@@ -168,11 +168,20 @@ class ScheduleCreator:
             *[(lbl, srch) for lbl, srch in SCHEDULE_SLOT_FALLBACK_ORDER if lbl != preferred_slot],
         ]
         _slot_picked = False
-        try:
+        def _open_slot_dropdown():
+            # Try the stable react-select input; fall back to clicking any
+            # visible element in the slot control if the CSS class changes.
+            inp = self.page.locator("#react-select-5-input")
+            if inp.count() > 0 and inp.first.is_visible():
+                inp.first.click()
+                return
             self.page.locator(
                 ".Select_root__Gqx23.ClassesScheduleSelect_root__KQfRb > "
                 ".css-127wfx0-control > .css-jlrko8 > .css-32j6ly"
-            ).click()
+            ).click(timeout=10_000)
+
+        try:
+            _open_slot_dropdown()
             for slot_label, slot_search in _slot_candidates:
                 self.page.locator("#react-select-5-input").fill("")
                 self.page.locator("#react-select-5-input").fill(slot_search)
@@ -183,7 +192,19 @@ class ScheduleCreator:
                     _slot_picked = True
                     break
             if not _slot_picked:
-                raise BrowserStepError("No available schedule slot found in dropdown.")
+                # None of the configured slots matched — reopen the dropdown and
+                # pick the first available option (library-specific slot).
+                _open_slot_dropdown()
+                self.page.locator("#react-select-5-input").fill("")
+                self.page.wait_for_timeout(400)
+                first_opt = self.page.locator("#react-select-5-option-0")
+                if first_opt.count() > 0:
+                    slot_label = first_opt.inner_text(timeout=2000).strip()
+                    first_opt.click()
+                    log.warning("No configured slot matched; using first available: %s", slot_label)
+                    _slot_picked = True
+                else:
+                    raise BrowserStepError("No available schedule slot found in dropdown.")
         except BrowserStepError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -199,24 +220,24 @@ class ScheduleCreator:
             )
         try:
             self.page.locator("i").nth(1).click()  # open the calendar
-            # Try the requested date first; if the cell is disabled (past 9 PM),
-            # advance day by day up to 3 days to find the next available cell.
+            # Try the requested date first; if the cell is disabled (e.g. today
+            # when it's past the slot time), advance day by day up to 7 days.
             target = start.date()
-            for _ in range(4):
+            clicked = False
+            for _ in range(7):
                 day_cell = str(target.day)
-                cell = self.page.get_by_role(
-                    "gridcell", name=day_cell, exact=True
-                ).filter(has_not=self.page.locator("[aria-disabled='true']"))
-                if cell.count() > 0:
-                    cell.first.click()
+                cell = self.page.get_by_role("gridcell", name=day_cell, exact=True).first
+                if cell.count() > 0 and not cell.is_disabled():
+                    cell.click()
                     if target != start.date():
                         log.warning(
                             "Start date %s unavailable in CCT calendar; used %s instead.",
                             start.date(), target,
                         )
+                    clicked = True
                     break
                 target += _td(days=1)
-            else:
+            if not clicked:
                 raise BrowserStepError(
                     f"Could not find an available calendar cell near {start.date()}."
                 )

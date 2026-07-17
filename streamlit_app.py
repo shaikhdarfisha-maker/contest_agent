@@ -14,7 +14,7 @@ from datetime import datetime, date, time
 
 import streamlit as st
 
-from config import APP_PASSWORD, DEFAULT_PROGRAM, GOOGLE_SHEET_ID, PROGRAMS
+from config import APP_PASSWORD, DEFAULT_PROGRAM, GOOGLE_SHEET_ID, PROGRAMS, next_slot_datetime
 from modules.library_reader import LibraryReader
 from modules.metadata_store import MetadataStore
 from modules.orchestrator import create_contest
@@ -235,10 +235,13 @@ with tab_create:
                     value=suggested_name,
                     placeholder="Advanced DSA 4 July Contest",
                 )
-                start_date = st.date_input("Contest Start Date", value=date.today())
+                _next_slot = next_slot_datetime()
+                _default_time = "9:00 PM" if _next_slot.hour == 21 else "7:00 AM"
+                start_date = st.date_input("Contest Start Date", value=_next_slot.date())
                 time_choice = st.radio(
                     "Contest Start Time",
                     options=["9:00 PM", "7:00 AM"],
+                    index=0 if _default_time == "9:00 PM" else 1,
                     horizontal=True,
                 )
                 start_time = time(21, 0) if time_choice == "9:00 PM" else time(7, 0)
