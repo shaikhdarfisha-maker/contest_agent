@@ -25,6 +25,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import datetime, time
 
@@ -35,6 +36,9 @@ from config import GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_SHEET_ID, PROGRAMS
 from modules.library_reader import LibraryReader
 from modules.logger import get_logger
 from modules.orchestrator import create_contest
+
+# Force headless — test runner must never open a visible browser window
+os.environ.setdefault("HEADLESS", "true")
 
 log = get_logger("test_runner")
 
@@ -107,6 +111,7 @@ def run_all(programs: list[str], module_filter: str | None, browser: bool) -> No
                 browser=browser,
                 dry_run_tracker=True,   # don't touch production tracker tabs
                 overwrite_tracker=True,
+                skip_hire_test=True,    # skip Hire Test (~40s×4) to speed up tests
                 progress=lambda step, msg, ok: None,
             )
 

@@ -113,6 +113,7 @@ class ContestOrchestrator:
         browser: bool = True,
         dry_run_tracker: bool = False,
         overwrite_tracker: bool = False,
+        skip_hire_test: bool = False,
         progress: Optional[ProgressCallback] = None,
     ) -> ContestOutcome:
         """Execute the workflow. Returns a structured outcome (never raises)."""
@@ -172,6 +173,7 @@ class ContestOrchestrator:
             if browser:
                 schedule_result = self._run_browser_steps(
                     request, library, batch_name, windows, emit, contest_db_id,
+                    skip_hire_test=skip_hire_test,
                 )
                 outcome.test_ids = schedule_result.test_ids
                 outcome.contest_id = schedule_result.contest_test_id
@@ -260,6 +262,7 @@ class ContestOrchestrator:
         windows: list[AttemptWindow],
         emit: Callable[..., None],
         contest_db_id: Optional[int],
+        skip_hire_test: bool = False,
     ) -> ScheduleResult:
         """Steps 4-7 inside a managed browser session."""
         with BrowserManager() as bm:
@@ -284,64 +287,67 @@ class ContestOrchestrator:
                 )
             emit("schedule", f"Class scheduled (class_id={schedule_result.class_id})")
 
-            # Step 5b: open the "+ Add Questions" links to discover the 4
-            # contest test-ids (Contest + 3 re-attempts), skipping the
-            # test-group link. Then close the popups.
-            emit("hire_nav", "Discovering Hire Test ids for all attempts")
-            popups = scheduler.open_all_add_questions(schedule_result)
             test_ids: list[str] = []
-            for attempt_index, popup in popups:
-                ids = scheduler._scrape_test_ids_from_url(popup.url)
-                if ids:
-                    test_ids.append(ids[0])
-                try:
-                    popup.close()
-                except Exception:  # noqa: BLE001
-                    pass
-            emit(
-                "hire_nav",
-                f"Found {len(test_ids)} contest test id(s)",
-                ok=len(test_ids) > 0,
-            )
-
-            # Step 6: set each attempt's window on its OWN fresh page (the
-            # pattern proven reliable in standalone testing). test_ids[i] maps
-            # to windows[i]: 0=Contest, 1=RA1, 2=RA2, 3=RA3.
-            emit("hire_update", "Updating Hire Test windows for each attempt")
-            applied_count = 0
-            for i, test_id in enumerate(test_ids):
-                if i >= len(windows):
-                    break
-                window = windows[i]
-                try:
-                    fresh = bm.new_hire_page(test_id)
-                    res = HireTest(fresh).update_window(window)
-                    if res.applied and res.verified:
-                        applied_count += 1
-                    emit(
-                        "hire_update",
-                        f"{window.label} (id {test_id}): "
-                        f"{window.start.date()} -> {window.end.date()} "
-                        f"(verified={res.verified})",
-                        ok=res.verified,
-                    )
+            if skip_hire_test:
+                emit("hire_nav", "Hire Test steps skipped (skip_hire_test=True)")
+                emit("hire_update", "Hire Test steps skipped (skip_hire_test=True)")
+            else:
+                # Step 5b: open the "+ Add Questions" links to discover the 4
+                # contest test-ids (Contest + 3 re-attempts), skipping the
+                # test-group link. Then close the popups.
+                emit("hire_nav", "Discovering Hire Test ids for all attempts")
+                popups = scheduler.open_all_add_questions(schedule_result)
+                for attempt_index, popup in popups:
+                    ids = scheduler._scrape_test_ids_from_url(popup.url)
+                    if ids:
+                        test_ids.append(ids[0])
                     try:
-                        fresh.close()
+                        popup.close()
                     except Exception:  # noqa: BLE001
                         pass
-                except Exception as exc:  # noqa: BLE001
-                    emit(
-                        "hire_update",
-                        f"{window.label} (id {test_id}) failed: {exc}",
-                        ok=False,
-                    )
+                emit(
+                    "hire_nav",
+                    f"Found {len(test_ids)} contest test id(s)",
+                    ok=len(test_ids) > 0,
+                )
 
-            schedule_result.test_ids = test_ids
-            emit(
-                "hire_update",
-                f"Hire Test updated for {applied_count}/{len(test_ids)} attempts",
-                ok=applied_count == len(test_ids) and len(test_ids) > 0,
-            )
+                # Step 6: set each attempt's window on its OWN fresh page (the
+                # pattern proven reliable in standalone testing). test_ids[i] maps
+                # to windows[i]: 0=Contest, 1=RA1, 2=RA2, 3=RA3.
+                emit("hire_update", "Updating Hire Test windows for each attempt")
+                applied_count = 0
+                for i, test_id in enumerate(test_ids):
+                    if i >= len(windows):
+                        break
+                    window = windows[i]
+                    try:
+                        fresh = bm.new_hire_page(test_id)
+                        res = HireTest(fresh).update_window(window)
+                        if res.applied and res.verified:
+                            applied_count += 1
+                        emit(
+                            "hire_update",
+                            f"{window.label} (id {test_id}): "
+                            f"{window.start.date()} -> {window.end.date()} "
+                            f"(verified={res.verified})",
+                            ok=res.verified,
+                        )
+                        try:
+                            fresh.close()
+                        except Exception:  # noqa: BLE001
+                            pass
+                    except Exception as exc:  # noqa: BLE001
+                        emit(
+                            "hire_update",
+                            f"{window.label} (id {test_id}) failed: {exc}",
+                            ok=False,
+                        )
+
+                emit(
+                    "hire_update",
+                    f"Hire Test updated for {applied_count}/{len(test_ids)} attempts",
+                    ok=applied_count == len(test_ids) and len(test_ids) > 0,
+                )
 
             bm.save_auth()
             return schedule_result
@@ -360,6 +366,7 @@ def create_contest(
     browser: bool = True,
     dry_run_tracker: bool = False,
     overwrite_tracker: bool = False,
+    skip_hire_test: bool = False,
     progress: Optional[ProgressCallback] = None,
 ) -> ContestOutcome:
     """One-call helper used by the CLI/UI.
@@ -383,5 +390,6 @@ def create_contest(
         browser=browser,
         dry_run_tracker=dry_run_tracker,
         overwrite_tracker=overwrite_tracker,
+        skip_hire_test=skip_hire_test,
         progress=progress,
     )
