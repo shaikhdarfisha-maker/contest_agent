@@ -78,7 +78,7 @@ class BatchCreator:
             filter_form.get_by_role("textbox").click()
             filter_form.get_by_role("textbox").fill(BATCH_CLONE_FILTER_KEYWORD)
             self.page.get_by_role("button", name="Apply").click()
-            self.page.wait_for_load_state("networkidle")
+            self.page.wait_for_load_state("domcontentloaded")
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not filter batches to clone: {exc}")
 
@@ -102,11 +102,9 @@ class BatchCreator:
             self.page.get_by_role("checkbox").check()
 
             self.page.get_by_role("button", name="Clone").click()
-            self.page.wait_for_load_state("networkidle")
+            # domcontentloaded is enough — we don't need all XHR to settle
+            self.page.wait_for_load_state("domcontentloaded")
         except Exception as exc:  # noqa: BLE001
-            # Clone can fail if the batch was already created in a prior partial
-            # run (the platform rejects the duplicate name). Before giving up,
-            # check whether the batch exists and reuse it.
             log.warning(
                 "Clone step threw — checking if batch '%s' already exists: %s",
                 batch_name, exc,
@@ -121,12 +119,10 @@ class BatchCreator:
                 return BatchResult(batch_name=batch_name, batch_id=fallback_id or None)
             raise BrowserStepError(f"Could not complete batch clone: {exc}")
 
-        # Navigate back to find the new batch and extract its id.
-        self.page.goto(URLS["admin_batches"])
-        raw_id = self._find_existing_batch(batch_name)
-        batch_id = raw_id if raw_id else None
-        log.info("Batch created via clone: %s (id=%s)", batch_name, batch_id)
-        return BatchResult(batch_name=batch_name, batch_id=batch_id)
+        # Skip the round-trip back to the list just to read the ID —
+        # batch_id is nice-to-have metadata but not required for the workflow.
+        log.info("Batch created via clone: %s", batch_name)
+        return BatchResult(batch_name=batch_name, batch_id=None)
 
     def _find_existing_batch(self, batch_name: str) -> Optional[str]:
         """Filter the batches table for batch_name; return its id if found, else None."""
@@ -143,7 +139,7 @@ class BatchCreator:
             filter_form.get_by_role("textbox").click()
             filter_form.get_by_role("textbox").fill(batch_name)
             self.page.get_by_role("button", name="Apply").click()
-            self.page.wait_for_load_state("networkidle")
+            self.page.wait_for_load_state("domcontentloaded")
 
             row = self.page.locator("tr").filter(has_text=batch_name)
             if row.count() == 0:

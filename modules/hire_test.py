@@ -61,10 +61,13 @@ class HireTest:
 
         self._dismiss_tour_overlay()
 
-        # Open Test Settings tab.
+        # Open Test Settings tab — wait for the date field to appear rather
+        # than burning time on networkidle.
         try:
             self.page.get_by_role("link", name="Test Settings").click()
-            self.page.wait_for_load_state("networkidle")
+            self.page.wait_for_selector(
+                "text=/[A-Z][a-z]+ \\d{1,2}, \\d{4}/", timeout=15000
+            )
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not open Test Settings: {exc}")
         self._dismiss_tour_overlay()
@@ -101,13 +104,13 @@ class HireTest:
                     break
                 self.page.wait_for_timeout(250)
             confirm.click()
-            self.page.wait_for_timeout(800)
+            # Wait for Apply Changes to become visible rather than sleeping
+            apply_btn = self.page.get_by_text("Apply Changes", exact=True)
+            apply_btn.first.wait_for(state="visible", timeout=8000)
 
             # Click "Apply Changes" (may open a confirm prompt, or apply directly).
-            apply_btn = self.page.get_by_text("Apply Changes", exact=True)
             apply_btn.first.scroll_into_view_if_needed()
             apply_btn.first.click()
-            self.page.wait_for_timeout(800)
 
             # If a "Confirm & Apply Changes" modal appears, click it. It's not
             # always present, so treat its absence as already-applied.
@@ -121,7 +124,7 @@ class HireTest:
                     final.first.click()
             except Exception:  # noqa: BLE001
                 log.debug("No 'Confirm & Apply Changes' modal to click.")
-            self.page.wait_for_load_state("networkidle")
+            self.page.wait_for_load_state("domcontentloaded")
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not apply changes: {exc}")
 
