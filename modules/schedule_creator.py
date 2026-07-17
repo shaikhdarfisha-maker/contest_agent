@@ -158,17 +158,14 @@ class ScheduleCreator:
 
         # --- schedule slot (day-dependent) ------------------------------- #
         # Try the preferred slot first; if it's not in the dropdown (e.g. today's
-        # 9 PM has already passed and CCT removed it), fall back through all slots.
-        from config import SCHEDULE_SLOT_MWF, SCHEDULE_SLOT_TTHS, SCHEDULE_SLOT_SEARCH_MWF, SCHEDULE_SLOT_SEARCH_TTHS
-        _ALL_SLOTS = [
-            (SCHEDULE_SLOT_MWF,  SCHEDULE_SLOT_SEARCH_MWF),
-            (SCHEDULE_SLOT_TTHS, SCHEDULE_SLOT_SEARCH_TTHS),
-        ]
+        # 9 PM has already passed and CCT removed it), fall back through all slots
+        # including 7 AM variants as last resort.
+        from config import SCHEDULE_SLOT_FALLBACK_ORDER
         preferred_slot, preferred_search = schedule_slot_for_today()
-        # Put preferred first, then the other as fallback.
+        # Put preferred first, then the rest of the fallback order.
         _slot_candidates = [
             (preferred_slot, preferred_search),
-            *[(lbl, srch) for lbl, srch in _ALL_SLOTS if lbl != preferred_slot],
+            *[(lbl, srch) for lbl, srch in SCHEDULE_SLOT_FALLBACK_ORDER if lbl != preferred_slot],
         ]
         _slot_picked = False
         try:

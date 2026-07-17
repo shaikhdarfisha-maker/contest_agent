@@ -279,9 +279,27 @@ SCHEDULE_SLOT_TTHS = os.getenv(
     "SCHEDULE_SLOT_TTHS",
     "Tue 09:00 PM | Thu 09:00 PM | Sat 09:00 PM (GMT+05:30)",
 )
+SCHEDULE_SLOT_MWF_7AM = os.getenv(
+    "SCHEDULE_SLOT_MWF_7AM",
+    "Mon 07:00 AM | Wed 07:00 AM | Fri 07:00 AM (GMT+05:30)",
+)
+SCHEDULE_SLOT_TTHS_7AM = os.getenv(
+    "SCHEDULE_SLOT_TTHS_7AM",
+    "Tue 07:00 AM | Thu 07:00 AM | Sat 07:00 AM (GMT+05:30)",
+)
 # Search text typed into the slot dropdown for each (narrows the options list).
 SCHEDULE_SLOT_SEARCH_MWF = os.getenv("SCHEDULE_SLOT_SEARCH_MWF", "mon 09")
 SCHEDULE_SLOT_SEARCH_TTHS = os.getenv("SCHEDULE_SLOT_SEARCH_TTHS", "tue 09")
+SCHEDULE_SLOT_SEARCH_MWF_7AM = os.getenv("SCHEDULE_SLOT_SEARCH_MWF_7AM", "mon 07")
+SCHEDULE_SLOT_SEARCH_TTHS_7AM = os.getenv("SCHEDULE_SLOT_SEARCH_TTHS_7AM", "tue 07")
+
+# Fallback order: preferred 9 PM slots first, 7 AM slots as last resort.
+SCHEDULE_SLOT_FALLBACK_ORDER = [
+    (SCHEDULE_SLOT_MWF,      SCHEDULE_SLOT_SEARCH_MWF),
+    (SCHEDULE_SLOT_TTHS,     SCHEDULE_SLOT_SEARCH_TTHS),
+    (SCHEDULE_SLOT_MWF_7AM,  SCHEDULE_SLOT_SEARCH_MWF_7AM),
+    (SCHEDULE_SLOT_TTHS_7AM, SCHEDULE_SLOT_SEARCH_TTHS_7AM),
+]
 
 
 def schedule_slot_for_today(today=None) -> tuple[str, str]:
