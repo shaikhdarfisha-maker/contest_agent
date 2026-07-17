@@ -84,7 +84,12 @@ def _write_result(ws: gspread.Worksheet, row: list) -> None:
 # --------------------------------------------------------------------------- #
 # Test loop
 # --------------------------------------------------------------------------- #
-def run_all(programs: list[str], module_filter: str | None, browser: bool) -> None:
+def run_all(
+    programs: list[str],
+    module_filter: str | None,
+    browser: bool,
+    module_set: set[tuple[str, str]] | None = None,
+) -> None:
     reader = LibraryReader()
     ws = _get_test_worksheet()
 
@@ -95,6 +100,8 @@ def run_all(programs: list[str], module_filter: str | None, browser: bool) -> No
         modules = reader.all_module_names(prog)
         if module_filter:
             modules = [m for m in modules if module_filter.lower() in m.lower()]
+        if module_set is not None:
+            modules = [m for m in modules if (prog, m) in module_set]
 
         log.info("=== %s: %d module(s) ===", prog.upper(), len(modules))
 
@@ -158,11 +165,34 @@ def main() -> None:
     )
     p.add_argument("--module", default=None, help="Filter to a specific module name")
     p.add_argument("--no-browser", action="store_true", help="Skip browser steps")
+    p.add_argument(
+        "--failed-only", action="store_true",
+        help="Re-run only modules that failed in the last test run (reads Google Sheet)"
+    )
     args = p.parse_args()
 
     if not GOOGLE_SHEET_ID:
         print("ERROR: GOOGLE_SHEET_ID not set in .env — cannot write results.")
         sys.exit(1)
+
+    module_set = None
+    if args.failed_only:
+        from google.oauth2.service_account import Credentials as _Creds
+        import gspread as _gs
+        _creds = _Creds.from_service_account_file(
+            GOOGLE_SERVICE_ACCOUNT_JSON, scopes=_SCOPES
+        )
+        _ws = _gs.authorize(_creds).open_by_key(GOOGLE_SHEET_ID).worksheet(_TEST_SHEET_NAME)
+        _rows = _ws.get_all_values()
+        seen: set[tuple[str, str]] = set()
+        module_set = set()
+        for r in _rows[1:]:
+            if len(r) > 4 and "Failed" in r[4]:
+                key = (r[1].lower(), r[2])
+                if key not in seen:
+                    seen.add(key)
+                    module_set.add(key)
+        print(f"--failed-only: {len(module_set)} unique failed module(s) loaded from Sheet\n")
 
     print(f"Testing {args.programs} — browser={'off' if args.no_browser else 'ON'}")
     print(f"Results → Google Sheet tab: '{_TEST_SHEET_NAME}'\n")
@@ -171,6 +201,7 @@ def main() -> None:
         programs=args.programs,
         module_filter=args.module,
         browser=not args.no_browser,
+        module_set=module_set,
     )
 
 
