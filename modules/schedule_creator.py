@@ -343,7 +343,7 @@ class ScheduleCreator:
 
         def _available_class_names(labels_loc) -> str:
             names = []
-            for i in range(min(labels_loc.count(), 12)):
+            for i in range(min(labels_loc.count(), 50)):
                 try:
                     txt = labels_loc.nth(i).inner_text(timeout=500).strip()
                     if txt:

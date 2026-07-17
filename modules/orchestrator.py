@@ -242,9 +242,15 @@ class ContestOrchestrator:
                     library_id=None,
                 )
 
-        # Default: use NV Contests — most module contests live there.
-        # The CCT checkbox logic will match the right class by module name.
-        # Pass --library-name to override with an Excel-specific library.
+        # No explicit library — try auto-resolving from the Excel sheet first.
+        # Falls back to NV Contests if the sheet has no entry for this module.
+        try:
+            match = self.library_reader.resolve(request.program, request.module)
+            log.info("Library resolved: %s", match.library_name)
+            return match
+        except Exception:  # noqa: BLE001
+            pass
+
         log.info("Using default library: %s", FALLBACK_LIBRARY_NAME)
         return LibraryMatch(
             module=request.module,
