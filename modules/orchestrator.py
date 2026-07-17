@@ -130,6 +130,18 @@ class ContestOrchestrator:
         contest_db_id: Optional[int] = None
 
         try:
+            # -- Pre-flight: reject past start times before any browser work.
+            # The Hire Test date picker disables dates whose time has already
+            # passed, so starting after 9 PM on the contest day would hang.
+            from datetime import datetime as _dt
+            now = _dt.now()
+            if request.start < now:
+                raise ContestAgentError(
+                    f"Contest start time {request.start.strftime('%d %b %Y %I:%M %p')} "
+                    f"is in the past (current time: {now.strftime('%d %b %Y %I:%M %p')}). "
+                    "Please use a future date/time."
+                )
+
             # -- Step 1: resolve library ---------------------------------- #
             emit("library", f"Reading library mapping for '{request.module}'")
             library = self._resolve_library(request)
