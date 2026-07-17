@@ -236,7 +236,12 @@ with tab_create:
                     placeholder="Advanced DSA 4 July Contest",
                 )
                 start_date = st.date_input("Contest Start Date", value=date.today())
-                start_time = st.time_input("Contest Start Time", value=time(21, 0))
+                time_choice = st.radio(
+                    "Contest Start Time",
+                    options=["9:00 PM", "7:00 AM"],
+                    horizontal=True,
+                )
+                start_time = time(21, 0) if time_choice == "9:00 PM" else time(7, 0)
             with col2:
                 lib_options = [_DEFAULT_LIB] + _load_library_names()
                 library_sel = st.selectbox("Library override (optional)", options=lib_options)
