@@ -329,12 +329,16 @@ class ScheduleCreator:
         want  = _re.compile(r"contest|test|neovarsity", _re.I)
         avoid = _re.compile(r"Discussion", _re.I)
 
-        # Wait for the async class list to begin rendering.
+        # Wait for the class-list labels specifically (not just any checkbox on
+        # the page). The library dropdown adds async content; the first label
+        # matching our want filter signals that the class list is populated.
         try:
-            self.page.wait_for_selector("input[type='checkbox']", timeout=15_000)
+            self.page.locator("label").filter(has_text=want).first.wait_for(
+                state="attached", timeout=15_000
+            )
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(
-                f"Class-list checkboxes never appeared after library selection: {exc}"
+                f"Class-list labels never appeared after library selection: {exc}"
             )
 
         def _available_class_names(labels_loc) -> str:
@@ -375,17 +379,15 @@ class ScheduleCreator:
                 for i in range(n):
                     try:
                         txt = labels.nth(i).inner_text(timeout=500).strip()
-                    except Exception:
+                    except Exception as _e:
+                        log.debug("Label %d inner_text failed: %s", i, _e)
                         continue
                     if not pref_pat.search(txt):
                         continue
                     if reattempt_re.search(txt):
                         continue  # skip re-attempt variants
-                    if found_lbl is None:
-                        found_lbl = labels.nth(i)
-                    else:
-                        found_lbl = None  # multiple matches — can't decide
-                        break
+                    found_lbl = labels.nth(i)
+                    break  # first match wins
                 if found_lbl is None:
                     return None
                 lbl = found_lbl
@@ -437,21 +439,20 @@ class ScheduleCreator:
                         const noRetry   = /re.?attempt/i;
                         const prefLower = preferredName.toLowerCase();
 
-                        // Escape special regex chars; (?!\d) prevents "Module 1"
-                        // matching "Module 10", "Module 11", etc.
-                        const prefEscaped = prefLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                        const prefPat = new RegExp(prefEscaped + '(?!\\d)');
-
                         const tryClick = () => {
                             const lbls = Array.from(document.querySelectorAll('label'))
                                 .filter(l => want.test(l.innerText) && !avoid.test(l.innerText));
                             let found = null;
                             for (const lbl of lbls) {
                                 const txt = lbl.innerText.trim().toLowerCase();
-                                if (!prefPat.test(txt)) continue;
+                                // startsWith avoids false matches on substrings;
+                                // next-char digit check prevents "Module 1" matching "Module 10"
+                                if (!txt.startsWith(prefLower)) continue;
+                                const nextCh = txt[prefLower.length];
+                                if (nextCh !== undefined && /\d/.test(nextCh)) continue;
                                 if (noRetry.test(lbl.innerText)) continue;
-                                if (found) { found = null; break; }
                                 found = lbl;
+                                break;  // first match wins
                             }
                             if (!found) return false;
                             const forId = found.getAttribute('for');
@@ -496,7 +497,23 @@ class ScheduleCreator:
                     log.info("Skill-eval checkbox ticked via JS scroll.")
                     return  # done — no Playwright chosen element needed
 
-            # Playwright fallback scroll loop (for no-preferred_name case)
+            # Playwright fallback scroll loop (for no-preferred_name case).
+            # Reset scroll to top first so items at position 0 aren't missed.
+            self.page.evaluate("""() => {
+                const cb = document.querySelector("input[type='checkbox']");
+                if (!cb) return;
+                let el = cb.parentElement;
+                while (el && el !== document.body) {
+                    const s = window.getComputedStyle(el);
+                    if ((s.overflowY==='auto'||s.overflowY==='scroll')
+                            && el.scrollHeight > el.clientHeight) {
+                        el.scrollTop = 0; return;
+                    }
+                    el = el.parentElement;
+                }
+                window.scrollTo(0, 0);
+            }""")
+            self.page.wait_for_timeout(200)
             for _ in range(80):
                 self.page.evaluate("""() => {
                     const cb = document.querySelector("input[type='checkbox']");
