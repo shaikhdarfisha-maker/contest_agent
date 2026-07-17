@@ -27,151 +27,63 @@ st.set_page_config(
 # --------------------------------------------------------------------------- #
 # Scaler-themed CSS
 # --------------------------------------------------------------------------- #
-st.markdown("""
+st.html("""
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  /* Base font */
-  html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif !important;
-  }
-
-  /* Hide default Streamlit header/footer */
+  html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
   #MainMenu, footer, header { visibility: hidden; }
-
-  /* Page background */
   .stApp { background-color: #F5F6FA; }
-
-  /* Top nav bar */
   .scaler-nav {
-    background: #1A1A2E;
-    padding: 12px 32px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: -1rem -1rem 2rem -1rem;
-    border-bottom: 3px solid #FF6B2B;
+    background: #1A1A2E; padding: 12px 32px; display: flex;
+    align-items: center; justify-content: space-between;
+    margin: -1rem -1rem 2rem -1rem; border-bottom: 3px solid #FF6B2B;
   }
   .scaler-nav img { height: 32px; }
-  .scaler-nav-title {
-    color: #FFFFFF;
-    font-size: 16px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-  }
+  .scaler-nav-title { color: #FFF; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
   .scaler-nav-right { color: #94A3B8; font-size: 13px; }
-
-  /* Cards */
   .scaler-card {
-    background: #FFFFFF;
-    border-radius: 12px;
-    border: 1px solid #E2E8F0;
-    padding: 24px 28px;
-    margin-bottom: 20px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    background: #FFF; border-radius: 12px; border: 1px solid #E2E8F0;
+    padding: 24px 28px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   }
   .scaler-card-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: #64748B;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-bottom: 16px;
-    padding-bottom: 10px;
+    font-size: 14px; font-weight: 600; color: #64748B; text-transform: uppercase;
+    letter-spacing: 0.8px; margin-bottom: 16px; padding-bottom: 10px;
     border-bottom: 1px solid #F1F5F9;
   }
-
-  /* Section label */
   .section-badge {
-    display: inline-block;
-    background: #FFF0E8;
-    color: #FF6B2B;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 3px 10px;
-    border-radius: 20px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    margin-bottom: 12px;
+    display: inline-block; background: #FFF0E8; color: #FF6B2B; font-size: 11px;
+    font-weight: 700; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.5px;
+    text-transform: uppercase; margin-bottom: 12px;
   }
-
-  /* Primary button */
   .stButton > button[kind="primary"] {
-    background: #FF6B2B !important;
-    border: none !important;
-    border-radius: 8px !important;
-    color: white !important;
-    font-weight: 600 !important;
-    font-family: 'Inter', sans-serif !important;
-    padding: 10px 24px !important;
-    font-size: 14px !important;
-    transition: background 0.2s !important;
+    background: #FF6B2B !important; border: none !important; border-radius: 8px !important;
+    color: white !important; font-weight: 600 !important; font-family: 'Inter', sans-serif !important;
+    padding: 10px 24px !important; font-size: 14px !important; transition: background 0.2s !important;
   }
-  .stButton > button[kind="primary"]:hover {
-    background: #E85D20 !important;
-  }
-
-  /* Secondary button */
+  .stButton > button[kind="primary"]:hover { background: #E85D20 !important; }
   .stButton > button {
-    border-radius: 8px !important;
-    font-family: 'Inter', sans-serif !important;
-    font-size: 14px !important;
-    font-weight: 500 !important;
+    border-radius: 8px !important; font-family: 'Inter', sans-serif !important;
+    font-size: 14px !important; font-weight: 500 !important;
   }
-
-  /* Inputs */
-  .stTextInput > div > div > input,
-  .stSelectbox > div > div,
-  .stDateInput > div > div > input {
-    border-radius: 8px !important;
-    border-color: #CBD5E1 !important;
-    font-family: 'Inter', sans-serif !important;
-    font-size: 14px !important;
+  .stTextInput > div > div > input, .stSelectbox > div > div, .stDateInput > div > div > input {
+    border-radius: 8px !important; border-color: #CBD5E1 !important;
+    font-family: 'Inter', sans-serif !important; font-size: 14px !important;
   }
-
-  /* Tabs */
-  .stTabs [data-baseweb="tab-list"] {
-    background: transparent;
-    border-bottom: 2px solid #E2E8F0;
-    gap: 0;
-  }
+  .stTabs [data-baseweb="tab-list"] { background: transparent; border-bottom: 2px solid #E2E8F0; gap: 0; }
   .stTabs [data-baseweb="tab"] {
-    font-family: 'Inter', sans-serif !important;
-    font-weight: 500;
-    font-size: 14px;
-    color: #64748B;
-    padding: 10px 24px;
-    border-radius: 0;
+    font-family: 'Inter', sans-serif !important; font-weight: 500; font-size: 14px;
+    color: #64748B; padding: 10px 24px; border-radius: 0;
   }
-  .stTabs [aria-selected="true"] {
-    color: #FF6B2B !important;
-    border-bottom: 2px solid #FF6B2B !important;
-    font-weight: 600 !important;
-  }
-
-  /* Step progress */
-  .step-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 0;
-    font-size: 14px;
-    color: #475569;
-    border-bottom: 1px solid #F8FAFC;
-  }
-
-  /* Status chips */
+  .stTabs [aria-selected="true"] { color: #FF6B2B !important; border-bottom: 2px solid #FF6B2B !important; font-weight: 600 !important; }
+  .step-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 14px; color: #475569; border-bottom: 1px solid #F8FAFC; }
   .chip-success { background:#DCFCE7; color:#166534; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600; }
   .chip-fail    { background:#FEE2E2; color:#991B1B; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600; }
   .chip-planned { background:#FEF9C3; color:#854D0E; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600; }
-
-  /* Table */
   .stDataFrame { border-radius: 8px; overflow: hidden; }
   thead tr th { background: #F8FAFC !important; font-size: 12px !important; color: #64748B !important; font-weight: 600 !important; }
-
-  /* Divider */
   hr { border-color: #E2E8F0; margin: 20px 0; }
 </style>
-""", unsafe_allow_html=True)
+""")
 
 _DEFAULT_LIB = "— NV Contests (default) —"
 _SCALER_LOGO = "https://www.scaler.com/storyblok-assets/f/290352327034910/190x40/762eb27df8/scaler-logo.svg"
