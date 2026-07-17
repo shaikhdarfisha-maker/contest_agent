@@ -360,43 +360,57 @@ class ScheduleCreator:
             # one silently is worse than failing fast.
             # IMPORTANT: return None (not raise) when not found so the scroll
             # loop in the caller can load more of the list and retry.
+            lbl = None
             if preferred_name and labels.count() > 1:
-                # 1. Exact substring match
-                preferred = labels.filter(has_text=preferred_name)
-
-                # 2. Fuzzy: filter by each significant word in the module name
-                if preferred.count() == 0:
-                    sig_words = [
-                        w for w in preferred_name.split()
-                        if len(w) >= 3 and w.lower() not in self._FUZZY_SKIP
-                    ]
-                    fuzzy = labels
-                    for word in sig_words:
-                        narrowed = fuzzy.filter(has_text=word)
-                        if narrowed.count() > 0:
-                            fuzzy = narrowed
-                    if fuzzy.count() == 1:
-                        log.info(
-                            "Fuzzy-matched class for '%s' using words %s",
-                            preferred_name, sig_words,
-                        )
-                        preferred = fuzzy
-
-                # Not found yet — return None so the caller scrolls and retries.
-                if preferred.count() == 0 or preferred.count() > 1:
+                # Manually inspect each label's text — avoids has_text filter
+                # issues with special characters like parentheses.
+                pref_lower = preferred_name.lower()
+                # Use (?!\d) so "Module 1" doesn't match "Module 10", "11", etc.
+                pref_pat = _re.compile(
+                    _re.escape(pref_lower) + r"(?!\d)", _re.I
+                )
+                reattempt_re = _re.compile(r"re.?attempt", _re.I)
+                n = labels.count()
+                found_lbl = None
+                for i in range(n):
+                    try:
+                        txt = labels.nth(i).inner_text(timeout=500).strip()
+                    except Exception:
+                        continue
+                    if not pref_pat.search(txt):
+                        continue
+                    if reattempt_re.search(txt):
+                        continue  # skip re-attempt variants
+                    if found_lbl is None:
+                        found_lbl = labels.nth(i)
+                    else:
+                        found_lbl = None  # multiple matches — can't decide
+                        break
+                if found_lbl is None:
                     return None
-
-                labels = preferred
-            if labels.count() > 0:
+                lbl = found_lbl
+            elif labels.count() > 0:
                 lbl = labels.first
+
+            if lbl is not None:
                 for_id = lbl.get_attribute("for")
                 if for_id:
-                    cb = self.page.locator(f"#{for_id}")
+                    cb = self.page.locator(f"[id='{for_id}']")
                     if cb.count():
                         return cb.first
                 inner = lbl.locator("input[type='checkbox']")
                 if inner.count():
                     return inner.first
+                sibling = lbl.locator(
+                    "xpath=preceding-sibling::input[@type='checkbox'][1]"
+                    " | following-sibling::input[@type='checkbox'][1]"
+                    " | ../input[@type='checkbox'][1]"
+                )
+                if sibling.count():
+                    return sibling.first
+                # Last resort: return the label — clicking it toggles
+                # the associated checkbox regardless of DOM structure.
+                return lbl
             # Fallback: aria-label on the checkbox itself.
             candidates = self.page.get_by_role(
                 "checkbox",
@@ -412,7 +426,78 @@ class ScheduleCreator:
 
         if chosen is None:
             log.info("Skill-eval checkbox not yet in DOM; scrolling list container.")
-            for _ in range(80):  # 80 × 200 px = up to 16 000 px
+
+            if preferred_name:
+                # Atomic JS approach: scroll AND click in one browser-side call.
+                # Avoids stale Playwright locators caused by virtual-scroll DOM recycling.
+                ticked = self.page.evaluate("""
+                    async ([preferredName]) => {
+                        const want      = /contest|test|neovarsity/i;
+                        const avoid     = /Discussion/i;
+                        const noRetry   = /re.?attempt/i;
+                        const prefLower = preferredName.toLowerCase();
+
+                        // Escape special regex chars; (?!\d) prevents "Module 1"
+                        // matching "Module 10", "Module 11", etc.
+                        const prefEscaped = prefLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const prefPat = new RegExp(prefEscaped + '(?!\\d)');
+
+                        const tryClick = () => {
+                            const lbls = Array.from(document.querySelectorAll('label'))
+                                .filter(l => want.test(l.innerText) && !avoid.test(l.innerText));
+                            let found = null;
+                            for (const lbl of lbls) {
+                                const txt = lbl.innerText.trim().toLowerCase();
+                                if (!prefPat.test(txt)) continue;
+                                if (noRetry.test(lbl.innerText)) continue;
+                                if (found) { found = null; break; }
+                                found = lbl;
+                            }
+                            if (!found) return false;
+                            const forId = found.getAttribute('for');
+                            if (forId) {
+                                const cb = document.getElementById(forId);
+                                if (cb) { cb.click(); return true; }
+                            }
+                            const inner = found.querySelector('input[type="checkbox"]');
+                            if (inner) { inner.click(); return true; }
+                            found.click();
+                            return true;
+                        };
+
+                        if (tryClick()) return true;
+
+                        // Find scroll container
+                        const anchor = document.querySelector("input[type='checkbox']");
+                        if (!anchor) return false;
+                        let el = anchor.parentElement;
+                        while (el && el !== document.body) {
+                            const s = window.getComputedStyle(el);
+                            if ((s.overflowY==='auto'||s.overflowY==='scroll')
+                                    && el.scrollHeight > el.clientHeight) break;
+                            el = el.parentElement;
+                        }
+                        const container = (el && el !== document.body) ? el : null;
+                        const maxScroll = container
+                            ? container.scrollHeight
+                            : document.documentElement.scrollHeight;
+
+                        for (let pos = 150; pos <= maxScroll + 300; pos += 150) {
+                            if (container) container.scrollTop = pos;
+                            else window.scrollTo(0, pos);
+                            await new Promise(r => setTimeout(r, 80));
+                            if (tryClick()) return true;
+                        }
+                        return false;
+                    }
+                """, [preferred_name])
+
+                if ticked:
+                    log.info("Skill-eval checkbox ticked via JS scroll.")
+                    return  # done — no Playwright chosen element needed
+
+            # Playwright fallback scroll loop (for no-preferred_name case)
+            for _ in range(80):
                 self.page.evaluate("""() => {
                     const cb = document.querySelector("input[type='checkbox']");
                     if (!cb) return;
@@ -457,7 +542,12 @@ class ScheduleCreator:
             chosen.scroll_into_view_if_needed(timeout=5_000)
         except Exception:  # noqa: BLE001
             pass
-        chosen.check()
+        try:
+            chosen.check()
+        except Exception:
+            # `chosen` may be a label element (returned as last resort).
+            # Clicking a label always toggles its associated checkbox.
+            chosen.click()
 
     def _extract_class_id(self) -> Optional[str]:
         match = re.search(r"/edit-sbat-group/(\d+)", self.page.url)
