@@ -535,6 +535,12 @@ with tab_create:
                 "End":      w.end.strftime("%d %b %Y"),
                 "Days":     str((w.end - w.start).days),
             } for w in windows])
+            st.markdown(
+                '<p style="font-size:11px;color:#94A3B8;margin-top:-8px;">'
+                '* Actual attempts depend on the CCT library — may be fewer than shown.'
+                '</p>',
+                unsafe_allow_html=True,
+            )
 
         if pending.get("duplicate_warning"):
             st.warning(f"⚠️ A contest named **{pending['contest_name']}** already exists in history — it will be overwritten.")
