@@ -31,7 +31,7 @@ from config import (
     URLS,
 )
 from modules.logger import get_logger
-from modules.utils import BrowserStepError, retry
+from modules.utils import BrowserStepError, SessionExpiredError, retry
 
 log = get_logger(__name__)
 
@@ -55,6 +55,7 @@ class BatchCreator:
         self.page.goto(URLS["admin_batches"])
         # SPA table populates via XHR after the `load` event — wait until idle.
         self.page.wait_for_load_state("networkidle")
+        self._assert_on_batches_page()
 
         # Guard: reuse if a previous (failed) run already created this batch.
         existing_id = self._find_existing_batch(batch_name)
@@ -68,6 +69,7 @@ class BatchCreator:
         # Batch doesn't exist — reload and filter by template keyword to clone.
         self.page.goto(URLS["admin_batches"])
         self.page.wait_for_load_state("networkidle")
+        self._assert_on_batches_page()
         try:
             self.page.locator(
                 "th:nth-child(2) > .data-table__header-item > "
@@ -127,6 +129,16 @@ class BatchCreator:
         # batch_id is nice-to-have metadata but not required for the workflow.
         log.info("Batch created via clone: %s", batch_name)
         return BatchResult(batch_name=batch_name, batch_id=None)
+
+    def _assert_on_batches_page(self) -> None:
+        """Raise SessionExpiredError immediately if we were redirected to login."""
+        url = self.page.url.lower()
+        if "scaler.com/admin" not in url:
+            raise SessionExpiredError(
+                f"Redirected away from admin page (now at {self.page.url!r}) — "
+                "Scaler session expired. Run capture_login.py locally to refresh "
+                "auth, then update STORAGE_STATE_B64 in Streamlit secrets."
+            )
 
     def _find_existing_batch(self, batch_name: str) -> Optional[str]:
         """Filter the batches table for batch_name; return its id if found, else None."""
