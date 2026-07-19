@@ -124,6 +124,30 @@ TRACKER_COLS = {
 # First data row (row 1 = banner, row 2 = headers, row 3 = sub-headers).
 TRACKER_FIRST_DATA_ROW = int(os.getenv("TRACKER_FIRST_DATA_ROW", "4"))
 
+# Per-program overrides — programs not listed here fall back to the defaults above.
+# DevOps Contests sheet has no module column and test-id columns at D/G/J that
+# must be skipped.
+TRACKER_COLS_BY_PROGRAM: dict[str, dict[str, int]] = {
+    "devops": {
+        "batch_name": 1,   # A  (no module column in this sheet)
+        "a1_start":   2,   # B
+        "a1_end":     3,   # C
+        # D(4) = Attempt 2 Test id — skip
+        "a2_start":   5,   # E
+        "a2_end":     6,   # F
+        # G(7) = Attempt 3 Test id — skip
+        "a3_start":   8,   # H
+        "a3_end":     9,   # I
+        # J(10) = Attempt 4 Test id — skip
+        "a4_start":  11,   # K
+        "a4_end":    12,   # L
+    },
+}
+
+TRACKER_FIRST_DATA_ROW_BY_PROGRAM: dict[str, int] = {
+    "devops": 2,   # DevOps sheet has one header row, not three
+}
+
 
 # --------------------------------------------------------------------------- #
 # Contest naming convention

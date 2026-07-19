@@ -32,7 +32,9 @@ from config import (
     GOOGLE_SHEET_NAME,
     GOOGLE_SHEET_NAMES,
     TRACKER_COLS,
+    TRACKER_COLS_BY_PROGRAM,
     TRACKER_FIRST_DATA_ROW,
+    TRACKER_FIRST_DATA_ROW_BY_PROGRAM,
 )
 from modules.logger import get_logger
 from modules.utils import AttemptWindow, DuplicateContestError, TrackerUpdateError
@@ -73,6 +75,8 @@ class GoogleContestTracker:
         sh = client.open_by_key(sheet_id)
         self._ws = sh.worksheet(sheet_name)
         self._program = program
+        self._cols: dict[str, int] = TRACKER_COLS_BY_PROGRAM.get(program.lower(), TRACKER_COLS)
+        self._first_data_row: int = TRACKER_FIRST_DATA_ROW_BY_PROGRAM.get(program.lower(), TRACKER_FIRST_DATA_ROW)
         log.info("Google Sheet '%s' opened for program '%s'", sheet_name, program)
 
     # ------------------------------------------------------------------ #
@@ -82,13 +86,12 @@ class GoogleContestTracker:
     def _find_row(self, batch_name: str) -> Optional[int]:
         """Return 1-based row index of an existing batch, or None."""
         rows = self._all_rows()
-        bat_col = TRACKER_COLS["batch_name"] - 1  # 0-based
-        mod_col = TRACKER_COLS["module"] - 1
+        bat_col = self._cols["batch_name"] - 1  # 0-based
         target = batch_name.strip().lower()
         for i, row in enumerate(
-            rows[TRACKER_FIRST_DATA_ROW - 1 :], start=TRACKER_FIRST_DATA_ROW
+            rows[self._first_data_row - 1 :], start=self._first_data_row
         ):
-            if len(row) <= max(bat_col, mod_col):
+            if len(row) <= bat_col:
                 continue
             if row[bat_col].strip().lower() == target:
                 return i
@@ -97,9 +100,10 @@ class GoogleContestTracker:
     def _first_empty_row(self) -> int:
         """Return the 1-based index of the first empty row below existing data."""
         rows = self._all_rows()
-        mod_col = TRACKER_COLS["module"] - 1
-        for i in range(TRACKER_FIRST_DATA_ROW - 1, len(rows)):
-            if len(rows[i]) <= mod_col or not rows[i][mod_col].strip():
+        # Use batch_name column as the anchor — present in every program layout.
+        check_col = self._cols["batch_name"] - 1
+        for i in range(self._first_data_row - 1, len(rows)):
+            if len(rows[i]) <= check_col or not rows[i][check_col].strip():
                 return i + 1  # convert to 1-based
         return len(rows) + 1  # append after last row
 
@@ -131,10 +135,10 @@ class GoogleContestTracker:
         row = existing_row or self._first_empty_row()
 
         # Build (row, col, value) triples for all manual cells.
-        cells: list[gspread.Cell] = [
-            gspread.Cell(row, TRACKER_COLS["module"], module),
-            gspread.Cell(row, TRACKER_COLS["batch_name"], batch_name),
-        ]
+        cells: list[gspread.Cell] = []
+        if "module" in self._cols:
+            cells.append(gspread.Cell(row, self._cols["module"], module))
+        cells.append(gspread.Cell(row, self._cols["batch_name"], batch_name))
 
         attempt_col_keys = [
             ("a1_start", "a1_end"),
@@ -143,8 +147,8 @@ class GoogleContestTracker:
             ("a4_start", "a4_end"),
         ]
         for win, (sk, ek) in zip(windows, attempt_col_keys):
-            cells.append(gspread.Cell(row, TRACKER_COLS[sk], _fmt(win.start)))
-            cells.append(gspread.Cell(row, TRACKER_COLS[ek], _fmt(win.end)))
+            cells.append(gspread.Cell(row, self._cols[sk], _fmt(win.start)))
+            cells.append(gspread.Cell(row, self._cols[ek], _fmt(win.end)))
 
         if dry_run:
             log.info("[dry-run] Would write '%s' at row %d in Google Sheet", batch_name, row)
@@ -166,15 +170,24 @@ class GoogleContestTracker:
         found: list[tuple[int, int]] = []
 
         rows = self._all_rows()
-        mod_col = TRACKER_COLS["module"] - 1
-        bat_col = TRACKER_COLS["batch_name"] - 1
+        bat_col = self._cols["batch_name"] - 1
+        # For sheets without a module column, match by checking the batch_name
+        # prefix; for sheets with a module column, use the dedicated column.
+        mod_col: Optional[int] = (self._cols["module"] - 1) if "module" in self._cols else None
         module_norm = module.strip().lower()
 
-        for row in rows[TRACKER_FIRST_DATA_ROW - 1 :]:
-            if len(row) <= max(mod_col, bat_col):
+        for row in rows[self._first_data_row - 1 :]:
+            if len(row) <= bat_col:
                 continue
-            if row[mod_col].strip().lower() != module_norm:
-                continue
+            if mod_col is not None:
+                if len(row) <= mod_col:
+                    continue
+                if row[mod_col].strip().lower() != module_norm:
+                    continue
+            else:
+                # No module column: match by batch_name starting with the module.
+                if not row[bat_col].strip().lower().startswith(module_norm):
+                    continue
             m = re.search(r"NV\s+Contest\s+(\w+)\s+(\d{4})", row[bat_col], re.I)
             if m:
                 mon_str = m.group(1).lower()
