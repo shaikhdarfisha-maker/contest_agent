@@ -278,6 +278,23 @@ def _bootstrap_storage_state() -> None:
             pass
 
 
+@st.cache_resource
+def _install_playwright_browsers() -> None:
+    """Install Playwright's Chromium binary on first run (Community Cloud)."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"playwright install chromium failed:\n{result.stderr}"
+        )
+
+
 def _bootstrap_cloud_config() -> None:
     """Inject Streamlit secrets into env vars and write credential files.
 
@@ -429,8 +446,9 @@ def _resolve_library_preview(module: str, program: str, override: Optional[str])
 # ─────────────────────────────────────────────────────────────────────────────
 # Bootstrap from secrets (Community Cloud: env vars and files are ephemeral)
 # ─────────────────────────────────────────────────────────────────────────────
-_bootstrap_cloud_config()   # env vars + service_account.json
-_bootstrap_storage_state()  # data/storage_state.json
+_install_playwright_browsers()  # Chromium binary (no-op after first run)
+_bootstrap_cloud_config()       # env vars + service_account.json
+_bootstrap_storage_state()      # data/storage_state.json
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Restore session from cookie (before login gate and sign-out handler).
