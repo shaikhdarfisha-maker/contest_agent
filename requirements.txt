@@ -3,5 +3,6 @@ pandas>=2.0,<3.0
 openpyxl>=3.1,<4.0
 python-dotenv>=1.0,<2.0
 streamlit>=1.33,<2.0
+streamlit-cookies-controller>=0.0.4
 gspread>=6.0,<7.0
 google-auth>=2.0,<3.0

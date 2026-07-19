@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .env
+.streamlit/secrets.toml
 data/*.bak_*
 data/contest_agent.sqlite3
 data/storage_state.json

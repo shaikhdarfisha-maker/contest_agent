@@ -3,14 +3,21 @@ streamlit_app.py — NV Contest Agent dashboard (Scaler-themed).
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac as _hmac
 import json
+import os
 import re
+import secrets as _secrets
+import time as _time
 from collections import OrderedDict
 from datetime import datetime, time
 from pathlib import Path
 from typing import Optional
 
 import streamlit as st
+from streamlit_cookies_controller import CookieController as _CookieCtrl
 
 from config import (
     APP_PASSWORD, BROWSER, DEFAULT_PROGRAM, GOOGLE_SHEET_ID,
@@ -43,8 +50,21 @@ st.html("""
       rel="stylesheet">
 <style>
   html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"],
-  [data-testid="stMain"], input, select, textarea, button, label, p, span, div {
+  [data-testid="stMain"], input, select, textarea, button, label, p {
     font-family: 'Inter', sans-serif !important;
+  }
+  /* Restore Material Symbols ligature font — must come after the broad rule */
+  [data-testid="stIconMaterial"],
+  [class*="material-symbols"],
+  [class*="Material-Symbols"] {
+    font-family: "Material Symbols Rounded" !important;
+    font-weight: normal !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    font-feature-settings: "liga" !important;
+    -webkit-font-feature-settings: "liga" !important;
+    font-style: normal !important;
+    display: inline-block !important;
   }
   [data-testid="stHeader"], [data-testid="stToolbar"],
   [data-testid="stDecoration"], #MainMenu, footer {
@@ -174,6 +194,20 @@ st.html("""
 """)
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Cookie-based auth (must render before any st.stop() so the hidden component
+# is present on both login and app pages, allowing the browser to respond)
+# ─────────────────────────────────────────────────────────────────────────────
+_cookies = _CookieCtrl()
+
+_COOKIE_NAME = "nv_agent_session"
+_COOKIE_TTL  = 7 * 24 * 3600  # 7 days in seconds
+try:
+    _SESSION_SECRET: str = st.secrets.get("SESSION_SECRET", "") or ""
+except Exception:
+    _SESSION_SECRET = ""
+_SESSION_SECRET = _SESSION_SECRET or os.getenv("SESSION_SECRET", "")
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
 _SCALER_LOGO = (
@@ -249,6 +283,35 @@ def _chip(status: str) -> str:
     return f'<span class="chip {cls}">{label}</span>'
 
 
+def _make_auth_cookie(email: str) -> str:
+    """Return a signed HMAC-SHA256 token: base64(expiry:sid:email:sig)."""
+    expiry = int(_time.time()) + _COOKIE_TTL
+    sid = _secrets.token_hex(8)
+    payload = f"{expiry}:{sid}:{email}"
+    sig = _hmac.new(_SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return base64.urlsafe_b64encode(f"{payload}:{sig}".encode()).decode()
+
+
+def _verify_auth_cookie(token: str) -> Optional[str]:
+    """Return the email if the cookie token is valid and unexpired, else None."""
+    if not _SESSION_SECRET:
+        return None
+    try:
+        raw = base64.urlsafe_b64decode(token.encode()).decode()
+        payload, sig = raw.rsplit(":", 1)
+        expected = _hmac.new(
+            _SESSION_SECRET.encode(), payload.encode(), hashlib.sha256
+        ).hexdigest()
+        if not _hmac.compare_digest(sig, expected):
+            return None
+        expiry_str, _sid, email = payload.split(":", 2)
+        if _time.time() > int(expiry_str):
+            return None
+        return email
+    except Exception:
+        return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Cached loaders
 # ─────────────────────────────────────────────────────────────────────────────
@@ -298,11 +361,28 @@ def _resolve_library_preview(module: str, program: str, override: Optional[str])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Restore session from cookie (before login gate and sign-out handler).
+# On the very first render the cookie controller returns None while the hidden
+# component loads; it triggers one extra rerun, after which the value is real.
+# ─────────────────────────────────────────────────────────────────────────────
+if not st.session_state.get("authenticated") and _SESSION_SECRET:
+    _raw_token = _cookies.get(_COOKIE_NAME)
+    if _raw_token:
+        _cookie_email = _verify_auth_cookie(_raw_token)
+        if _cookie_email:
+            st.session_state["authenticated"] = True
+            st.session_state["user"] = {
+                "email": _cookie_email,
+                "display_name": _email_to_display_name(_cookie_email),
+            }
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Sign-out handler (runs before login gate so ?signout=1 always works)
 # ─────────────────────────────────────────────────────────────────────────────
 if st.query_params.get("signout") == "1":
     for _k in ("authenticated", "user", "pending"):
         st.session_state.pop(_k, None)
+    _cookies.remove(_COOKIE_NAME)
     st.query_params.clear()
     st.rerun()
 
@@ -352,6 +432,8 @@ if APP_PASSWORD and not st.session_state.get("authenticated"):
                     "email": e,
                     "display_name": _email_to_display_name(e),
                 }
+                if _SESSION_SECRET:
+                    _cookies.set(_COOKIE_NAME, _make_auth_cookie(e), max_age=_COOKIE_TTL)
                 st.rerun()
 
     st.stop()
