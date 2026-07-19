@@ -76,6 +76,7 @@ class ContestRequest:
     library_name: Optional[str] = None  # explicit override for ambiguous cases
     batch_name_override: Optional[str] = None  # exact name (skips auto-naming)
     duration_min: int = DEFAULT_CONTEST_DURATION_MIN
+    created_by: str = "Unknown"
 
 
 @dataclass
@@ -178,6 +179,7 @@ class ContestOrchestrator:
                 a1_end=windows[0].end.isoformat(),
                 windows_json=self.store.dumps([w.as_dict() for w in windows]),
                 status="planned",
+                created_by=request.created_by,
             )
 
             # -- Steps 4-7: browser systems ------------------------------- #
@@ -386,6 +388,7 @@ def create_contest(
     overwrite_tracker: bool = False,
     skip_hire_test: bool = False,
     progress: Optional[ProgressCallback] = None,
+    created_by: str = "Unknown",
 ) -> ContestOutcome:
     """One-call helper used by the CLI/UI.
 
@@ -402,6 +405,7 @@ def create_contest(
         program=program,
         library_name=library_name,
         batch_name_override=batch_name_override,
+        created_by=created_by,
     )
     return ContestOrchestrator().run(
         request,

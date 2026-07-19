@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS contests (
     status          TEXT NOT NULL DEFAULT 'created',
     tracker_row     INTEGER,
     created_at      TEXT NOT NULL,
+    created_by      TEXT NOT NULL DEFAULT 'Unknown',
     UNIQUE(program, batch_name)
 );
 
@@ -75,6 +76,11 @@ class MetadataStore:
     def _init_schema(self) -> None:
         with self._conn() as conn:
             conn.executescript(_SCHEMA)
+            # Graceful migration: add created_by if older DB lacks it
+            try:
+                conn.execute("ALTER TABLE contests ADD COLUMN created_by TEXT NOT NULL DEFAULT 'Unknown'")
+            except Exception:
+                pass  # column already exists
         log.debug("Metadata store ready at %s", self.db_path)
 
     # -- duplicate detection ----------------------------------------------- #
@@ -154,7 +160,7 @@ class MetadataStore:
                 """
                 SELECT id, program, module, batch_name, library_name,
                        contest_id, test_ids_json, a1_start, a1_end,
-                       windows_json, status, tracker_row, created_at
+                       windows_json, status, tracker_row, created_at, created_by
                 FROM   contests
                 ORDER  BY id DESC
                 LIMIT  ?
