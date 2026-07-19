@@ -284,15 +284,22 @@ def _install_playwright_browsers() -> None:
     import subprocess
     import sys
 
+    _log = __import__("logging").getLogger("install_playwright")
+    _log.info("Running: playwright install chromium …")
     result = subprocess.run(
         [sys.executable, "-m", "playwright", "install", "chromium"],
         capture_output=True,
         text=True,
     )
+    if result.stdout:
+        _log.info("playwright install stdout: %s", result.stdout.strip())
+    if result.stderr:
+        _log.info("playwright install stderr: %s", result.stderr.strip())
     if result.returncode != 0:
         raise RuntimeError(
-            f"playwright install chromium failed:\n{result.stderr}"
+            f"playwright install chromium failed (rc={result.returncode}):\n{result.stderr}"
         )
+    _log.info("Playwright Chromium install complete.")
 
 
 def _bootstrap_cloud_config() -> None:
