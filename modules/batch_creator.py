@@ -53,6 +53,8 @@ class BatchCreator:
         """Clone an existing NV batch, or reuse it if it already exists."""
         log.info("Creating batch via clone: %s", batch_name)
         self.page.goto(URLS["admin_batches"])
+        # SPA table populates via XHR after the `load` event — wait until idle.
+        self.page.wait_for_load_state("networkidle")
 
         # Guard: reuse if a previous (failed) run already created this batch.
         existing_id = self._find_existing_batch(batch_name)
@@ -65,6 +67,7 @@ class BatchCreator:
 
         # Batch doesn't exist — reload and filter by template keyword to clone.
         self.page.goto(URLS["admin_batches"])
+        self.page.wait_for_load_state("networkidle")
         try:
             self.page.locator(
                 "th:nth-child(2) > .data-table__header-item > "
@@ -78,7 +81,7 @@ class BatchCreator:
             filter_form.get_by_role("textbox").click()
             filter_form.get_by_role("textbox").fill(BATCH_CLONE_FILTER_KEYWORD)
             self.page.get_by_role("button", name="Apply").click()
-            self.page.wait_for_load_state("domcontentloaded")
+            self.page.wait_for_load_state("networkidle")
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not filter batches to clone: {exc}")
 
@@ -110,6 +113,7 @@ class BatchCreator:
                 batch_name, exc,
             )
             self.page.goto(URLS["admin_batches"])
+            self.page.wait_for_load_state("networkidle")
             fallback_id = self._find_existing_batch(batch_name)
             if fallback_id is not None:
                 log.warning(
@@ -139,7 +143,7 @@ class BatchCreator:
             filter_form.get_by_role("textbox").click()
             filter_form.get_by_role("textbox").fill(batch_name)
             self.page.get_by_role("button", name="Apply").click()
-            self.page.wait_for_load_state("domcontentloaded")
+            self.page.wait_for_load_state("networkidle")
 
             row = self.page.locator("tr").filter(has_text=batch_name)
             if row.count() == 0:
