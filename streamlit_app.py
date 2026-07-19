@@ -59,7 +59,7 @@ st.html("""
     align-items: center; justify-content: space-between;
     margin: -1rem -1rem 1.5rem -1rem; border-bottom: 3px solid #FF6B2B;
   }
-  .scaler-nav img { height: 30px; }
+  .scaler-nav img { height: 30px; filter: brightness(0) invert(1); }
   .scaler-nav-title { color:#fff; font-size:16px; font-weight:600; letter-spacing:0.3px; }
 
   /* ── Auth banner ── */
