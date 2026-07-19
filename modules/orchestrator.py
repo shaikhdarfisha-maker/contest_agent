@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
 
-from config import DEFAULT_CONTEST_DURATION_MIN, DEFAULT_PROGRAM, FALLBACK_LIBRARY_NAME, GOOGLE_SHEET_ID, build_contest_name
+from config import DEFAULT_CONTEST_DURATION_MIN, DEFAULT_PROGRAM, FALLBACK_LIBRARY_NAME, GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_SHEET_ID, build_contest_name
 from modules.browser import BrowserManager
 from modules.batch_creator import BatchCreator
 from modules.hire_test import HireTest
