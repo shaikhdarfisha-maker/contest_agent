@@ -125,27 +125,27 @@ TRACKER_COLS = {
 TRACKER_FIRST_DATA_ROW = int(os.getenv("TRACKER_FIRST_DATA_ROW", "4"))
 
 # Per-program overrides — programs not listed here fall back to the defaults above.
-# DevOps Contests sheet has no module column and test-id columns at D/G/J that
-# must be skipped.
+# DevOps Contests sheet layout (confirmed from live sheet):
+#   Row 1: Banner, Row 2: Column headers, Row 3: Start/End sub-headers, Row 4+: data
+#   A=Module, B=Batch Name, C=A1 Start, D=A1 End, E=A2 Start, F=A2 End,
+#   G=A3 Start, H=A3 End, I=A4 Start, J=A4 End, K-N=formulas (No. of Attempts etc.)
 TRACKER_COLS_BY_PROGRAM: dict[str, dict[str, int]] = {
     "devops": {
-        "batch_name": 1,   # A  (no module column in this sheet)
-        "a1_start":   2,   # B
-        "a1_end":     3,   # C
-        # D(4) = Attempt 2 Test id — skip
+        "module":     1,   # A
+        "batch_name": 2,   # B
+        "a1_start":   3,   # C
+        "a1_end":     4,   # D
         "a2_start":   5,   # E
         "a2_end":     6,   # F
-        # G(7) = Attempt 3 Test id — skip
-        "a3_start":   8,   # H
-        "a3_end":     9,   # I
-        # J(10) = Attempt 4 Test id — skip
-        "a4_start":  11,   # K
-        "a4_end":    12,   # L
+        "a3_start":   7,   # G
+        "a3_end":     8,   # H
+        "a4_start":   9,   # I
+        "a4_end":    10,   # J
     },
 }
 
 TRACKER_FIRST_DATA_ROW_BY_PROGRAM: dict[str, int] = {
-    "devops": 2,   # DevOps sheet has one header row, not three
+    "devops": 4,   # Row 1=banner, Row 2=headers, Row 3=Start/End sub-headers, data from row 4
 }
 
 
