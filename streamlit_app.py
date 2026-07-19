@@ -278,6 +278,42 @@ def _bootstrap_storage_state() -> None:
             pass
 
 
+def _bootstrap_cloud_config() -> None:
+    """Inject Streamlit secrets into env vars and write credential files.
+
+    config.py reads all settings via os.getenv() at module-import time, so
+    those values are frozen.  _build_tracker() re-reads env at call time, so
+    injecting here before the first run is enough to reach Google Sheets.
+    """
+    from config import DATA_DIR
+
+    # Simple string secrets → env vars (safe to call os.environ.setdefault
+    # so local .env values already present are not overwritten).
+    for key in ("GOOGLE_SHEET_ID", "APP_PASSWORD", "SESSION_SECRET"):
+        try:
+            val = str(st.secrets.get(key, "") or "")
+            if val:
+                os.environ.setdefault(key, val)
+        except Exception:
+            pass
+
+    # Service account JSON from base64 secret.
+    svc_b64: str = ""
+    try:
+        svc_b64 = str(st.secrets.get("SERVICE_ACCOUNT_B64", "") or "")
+    except Exception:
+        pass
+    svc_b64 = svc_b64 or os.getenv("SERVICE_ACCOUNT_B64", "")
+    if svc_b64:
+        svc_path = DATA_DIR / "service_account.json"
+        if not svc_path.exists():
+            try:
+                svc_path.parent.mkdir(parents=True, exist_ok=True)
+                svc_path.write_bytes(base64.b64decode(svc_b64.strip()))
+            except Exception:
+                pass
+
+
 def _session_expired() -> bool:
     """Return True if no usable auth state exists (file absent AND no secret)."""
     path = Path(BROWSER.storage_state) if BROWSER.storage_state else None
@@ -391,9 +427,10 @@ def _resolve_library_preview(module: str, program: str, override: Optional[str])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Bootstrap storage_state from secrets (Community Cloud: filesystem is ephemeral)
+# Bootstrap from secrets (Community Cloud: env vars and files are ephemeral)
 # ─────────────────────────────────────────────────────────────────────────────
-_bootstrap_storage_state()
+_bootstrap_cloud_config()   # env vars + service_account.json
+_bootstrap_storage_state()  # data/storage_state.json
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Restore session from cookie (before login gate and sign-out handler).

@@ -40,13 +40,27 @@ from modules.tracker import ContestTracker
 
 
 def _build_tracker(program: str = "academy"):
-    """Return GoogleContestTracker when configured, else the Excel tracker."""
-    if GOOGLE_SHEET_ID:
-        try:
-            from modules.google_tracker import GoogleContestTracker
-            return GoogleContestTracker(program=program)
-        except Exception as exc:
-            log.warning("Google Sheet unavailable (%s) — falling back to Excel tracker", exc)
+    """Return GoogleContestTracker when configured, else the Excel tracker.
+
+    Re-reads env vars at call time so secrets bootstrapped at app startup
+    (GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_JSON) are visible here even
+    though config.py module-level constants were frozen at import time.
+    """
+    import os as _os
+    from modules.utils import TrackerUpdateError
+
+    # Re-read at call time so streamlit_app.py's startup bootstrap is visible.
+    sheet_id = _os.getenv("GOOGLE_SHEET_ID", "") or GOOGLE_SHEET_ID
+    creds_path = _os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "") or GOOGLE_SERVICE_ACCOUNT_JSON
+
+    if sheet_id:
+        from modules.google_tracker import GoogleContestTracker
+        # Intentionally NOT catching — if Sheets is configured and fails, the
+        # error surfaces immediately rather than silently falling back to the
+        # Excel tracker (which won't exist on Cloud deployments).
+        return GoogleContestTracker(
+            sheet_id=sheet_id, program=program, creds_path=creds_path
+        )
     return ContestTracker()
 from modules.utils import (
     AmbiguousLibraryError,
