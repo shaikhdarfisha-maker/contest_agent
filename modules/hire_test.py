@@ -112,6 +112,10 @@ class HireTest:
             apply_btn.first.scroll_into_view_if_needed()
             apply_btn.first.click()
 
+            # Give the confirmation modal time to appear — without this wait the
+            # locator check fires before the DOM updates and the modal is missed.
+            self.page.wait_for_timeout(1500)
+
             # If a "Confirm & Apply Changes" modal appears, click it. It's not
             # always present, so treat its absence as already-applied.
             final = self.page.locator("#save_setting")
@@ -119,9 +123,11 @@ class HireTest:
                 final = self.page.get_by_text("Confirm & Apply Changes")
             try:
                 if final.count() > 0:
-                    final.first.wait_for(state="visible", timeout=5000)
+                    final.first.wait_for(state="visible", timeout=6000)
                     final.first.scroll_into_view_if_needed()
                     final.first.click()
+                    # Wait for the save to complete before verifying.
+                    self.page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:  # noqa: BLE001
                 log.debug("No 'Confirm & Apply Changes' modal to click.")
             self.page.wait_for_load_state("domcontentloaded")
@@ -152,7 +158,7 @@ class HireTest:
         target_month = dt.strftime("%b %Y")  # e.g. "Jun 2026"
         day = str(dt.day)
 
-        for _ in range(6):  # up to 6 nav steps to bring the month into view
+        for _ in range(24):  # up to 24 nav steps (2 years) to bring the month into view
             left_hdr = self._panel_header(".drp-calendar.left")
             right_hdr = self._panel_header(".drp-calendar.right")
 
