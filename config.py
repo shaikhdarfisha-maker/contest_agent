@@ -210,7 +210,7 @@ ATTEMPT_DURATIONS: dict[int, list[int]] = {
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class BrowserConfig:
-    headless: bool = os.getenv("HEADLESS", "false").lower() == "true"
+    headless: bool = os.getenv("HEADLESS", "true").lower() == "true"
     slow_mo_ms: int = int(os.getenv("SLOW_MO_MS", "0"))
     default_timeout_ms: int = int(os.getenv("DEFAULT_TIMEOUT_MS", "30000"))
     nav_timeout_ms: int = int(os.getenv("NAV_TIMEOUT_MS", "45000"))

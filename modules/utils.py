@@ -49,6 +49,10 @@ class TrackerUpdateError(ContestAgentError):
     """Raised when the tracker cannot be updated safely."""
 
 
+class SessionExpiredError(ContestAgentError):
+    """Raised when the browser is redirected to a login/SSO page mid-run."""
+
+
 # --------------------------------------------------------------------------- #
 # Retry decorator
 # --------------------------------------------------------------------------- #

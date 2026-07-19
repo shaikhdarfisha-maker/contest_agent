@@ -3,13 +3,17 @@ browser.py
 ==========
 Playwright lifecycle management shared by every page object:
 
-  * launches Chromium (headed by default for first-run SSO),
+  * launches Chromium headless (HEADLESS env var, default true),
   * reuses a persisted storage_state so we don't script the login each run,
-  * applies consistent timeouts,
+  * detects mid-run SSO redirects so the orchestrator can abort cleanly,
   * captures a screenshot automatically on any failure.
 
 Page objects (batch_creator, schedule_creator, hire_test) receive the live
 `page` from here and only own their own selectors and step logic.
+
+Headless is the only supported mode on Streamlit Community Cloud.  To open
+a visible browser locally for debugging set HEADLESS=false in your .env.
+Use capture_login.py (not this module) for the one-time auth capture.
 """
 
 from __future__ import annotations
@@ -32,6 +36,23 @@ from modules.logger import get_logger
 
 log = get_logger(__name__)
 
+# URL fragments that indicate a login / SSO redirect page.
+_LOGIN_URL_PATTERNS = (
+    "accounts.google.com",
+    "/login",
+    "/sign-in",
+    "signin",
+    "/auth",
+)
+
+# Chromium flags for low-memory / sandboxless environments
+# (Streamlit Community Cloud / Docker / CI).  Safe to pass on macOS too.
+_LAUNCH_ARGS = [
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+]
+
 
 class BrowserManager:
     """Context-managed Playwright browser with auth reuse and error capture."""
@@ -47,7 +68,9 @@ class BrowserManager:
     def __enter__(self) -> "BrowserManager":
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(
-            headless=self.headless, slow_mo=BROWSER.slow_mo_ms
+            headless=self.headless,
+            slow_mo=BROWSER.slow_mo_ms,
+            args=_LAUNCH_ARGS,
         )
 
         storage = BROWSER.storage_state
@@ -61,8 +84,7 @@ class BrowserManager:
 
         if not storage_exists:
             log.warning(
-                "No saved auth state at %s. Complete login in the opened "
-                "browser, then call save_auth() to persist it.",
+                "No saved auth state at %s — run capture_login.py to create one.",
                 storage,
             )
         return self
@@ -91,7 +113,7 @@ class BrowserManager:
             raise RuntimeError("BrowserManager used outside its context.")
         return self._page
 
-    def new_hire_page(self, test_id: str):
+    def new_hire_page(self, test_id: str) -> Page:
         """Open a fresh page at a Hire Test's basic-settings, return it."""
         from config import URLS
 
@@ -107,6 +129,30 @@ class BrowserManager:
         if self._context and BROWSER.storage_state:
             self._context.storage_state(path=BROWSER.storage_state)
             log.info("Saved auth state to %s", BROWSER.storage_state)
+
+    # -- session detection ------------------------------------------------- #
+    def is_login_page(self, page: Optional[Page] = None) -> bool:
+        """Return True if the given page (or main page) is on a login/SSO URL."""
+        check = page or self._page
+        if check is None:
+            return False
+        try:
+            url = check.url.lower()
+            return any(p in url for p in _LOGIN_URL_PATTERNS)
+        except Exception:  # noqa: BLE001
+            return False
+
+    def any_login_page(self) -> bool:
+        """Return True if ANY open page in the context is on a login/SSO URL."""
+        if self._context is None:
+            return False
+        try:
+            return any(
+                any(pat in p.url.lower() for pat in _LOGIN_URL_PATTERNS)
+                for p in self._context.pages
+            )
+        except Exception:  # noqa: BLE001
+            return False
 
     # -- diagnostics ------------------------------------------------------- #
     def capture_error(self, label: str) -> Optional[Path]:

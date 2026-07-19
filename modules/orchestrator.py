@@ -51,8 +51,10 @@ def _build_tracker(program: str = "academy"):
 from modules.utils import (
     AmbiguousLibraryError,
     AttemptWindow,
+    BrowserStepError,
     ContestAgentError,
     LibraryNotFoundError,
+    SessionExpiredError,
     derive_attempt_windows,
     derive_attempt_windows_by_count,
     parse_datetime,
@@ -287,90 +289,128 @@ class ContestOrchestrator:
         """Steps 4-7 inside a managed browser session."""
         with BrowserManager() as bm:
             page = bm.page
-
-            # Step 4: create batch (Admin V2) — auto-reuses if already exists.
-            emit("batch", f"Creating batch '{batch_name}' in Admin V2")
-            batch = BatchCreator(page).create_batch(batch_name)
-            if contest_db_id is not None:
-                self.store.update_contest(contest_db_id, batch_id=batch.batch_id)
-            emit("batch", f"Batch created (id={batch.batch_id})")
-
-            # Step 5: schedule class (CCT).
-            emit("schedule", "Scheduling class in CCT")
-            scheduler = ScheduleCreator(page)
-            schedule_result = scheduler.schedule_class(
-                batch_name, library, request.start, request.duration_min
-            )
-            if contest_db_id is not None:
-                self.store.update_contest(
-                    contest_db_id, class_id=schedule_result.class_id
+            try:
+                return self._browser_steps_inner(
+                    bm, page, request, library, batch_name, windows,
+                    emit, contest_db_id, skip_hire_test,
                 )
-            emit("schedule", f"Class scheduled (class_id={schedule_result.class_id})")
+            except SessionExpiredError:
+                raise  # already correct type, screenshot taken below
+            except BrowserStepError as exc:
+                if bm.any_login_page():
+                    bm.capture_error("session_expired")
+                    raise SessionExpiredError(
+                        "Scaler session expired — run capture_login.py locally "
+                        "to refresh auth, then upload the new storage_state.json."
+                    ) from exc
+                raise
 
-            test_ids: list[str] = []
-            if skip_hire_test:
-                emit("hire_nav", "Hire Test steps skipped (skip_hire_test=True)")
-                emit("hire_update", "Hire Test steps skipped (skip_hire_test=True)")
-            else:
-                # Step 5b: open the "+ Add Questions" links to discover the 4
-                # contest test-ids (Contest + 3 re-attempts), skipping the
-                # test-group link. Then close the popups.
-                emit("hire_nav", "Discovering Hire Test ids for all attempts")
-                popups = scheduler.open_all_add_questions(schedule_result)
-                for attempt_index, popup in popups:
-                    ids = scheduler._scrape_test_ids_from_url(popup.url)
-                    if ids:
-                        test_ids.append(ids[0])
+    def _browser_steps_inner(
+        self,
+        bm: BrowserManager,
+        page: object,
+        request: ContestRequest,
+        library: LibraryMatch,
+        batch_name: str,
+        windows: list[AttemptWindow],
+        emit: Callable[..., None],
+        contest_db_id: Optional[int],
+        skip_hire_test: bool = False,
+    ) -> ScheduleResult:
+        # Step 4: create batch (Admin V2) — auto-reuses if already exists.
+        emit("batch", f"Creating batch '{batch_name}' in Admin V2")
+        batch = BatchCreator(page).create_batch(batch_name)
+        if contest_db_id is not None:
+            self.store.update_contest(contest_db_id, batch_id=batch.batch_id)
+        emit("batch", f"Batch created (id={batch.batch_id})")
+
+        # Step 5: schedule class (CCT).
+        emit("schedule", "Scheduling class in CCT")
+        scheduler = ScheduleCreator(page)
+        schedule_result = scheduler.schedule_class(
+            batch_name, library, request.start, request.duration_min
+        )
+        if contest_db_id is not None:
+            self.store.update_contest(
+                contest_db_id, class_id=schedule_result.class_id
+            )
+        emit("schedule", f"Class scheduled (class_id={schedule_result.class_id})")
+
+        test_ids: list[str] = []
+        if skip_hire_test:
+            emit("hire_nav", "Hire Test steps skipped (skip_hire_test=True)")
+            emit("hire_update", "Hire Test steps skipped (skip_hire_test=True)")
+        else:
+            # Step 5b: open the "+ Add Questions" links to discover the 4
+            # contest test-ids (Contest + 3 re-attempts), skipping the
+            # test-group link. Then close the popups.
+            emit("hire_nav", "Discovering Hire Test ids for all attempts")
+            popups = scheduler.open_all_add_questions(schedule_result)
+            for attempt_index, popup in popups:
+                ids = scheduler._scrape_test_ids_from_url(popup.url)
+                if ids:
+                    test_ids.append(ids[0])
+                try:
+                    popup.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            emit(
+                "hire_nav",
+                f"Found {len(test_ids)} contest test id(s)",
+                ok=len(test_ids) > 0,
+            )
+
+            # Step 6: set each attempt's window on its OWN fresh page (the
+            # pattern proven reliable in standalone testing). test_ids[i] maps
+            # to windows[i]: 0=Contest, 1=RA1, 2=RA2, 3=RA3.
+            emit("hire_update", "Updating Hire Test windows for each attempt")
+            applied_count = 0
+            for i, test_id in enumerate(test_ids):
+                if i >= len(windows):
+                    break
+                window = windows[i]
+                try:
+                    fresh = bm.new_hire_page(test_id)
+                    res = HireTest(fresh).update_window(window)
+                    if res.applied and res.verified:
+                        applied_count += 1
+                    emit(
+                        "hire_update",
+                        f"{window.label} (id {test_id}): "
+                        f"{window.start.date()} -> {window.end.date()} "
+                        f"(verified={res.verified})",
+                        ok=res.verified,
+                    )
                     try:
-                        popup.close()
+                        fresh.close()
                     except Exception:  # noqa: BLE001
                         pass
-                emit(
-                    "hire_nav",
-                    f"Found {len(test_ids)} contest test id(s)",
-                    ok=len(test_ids) > 0,
-                )
+                except BrowserStepError as exc:
+                    if bm.any_login_page():
+                        raise SessionExpiredError(
+                            "Scaler session expired — run capture_login.py locally "
+                            "to refresh auth, then upload the new storage_state.json."
+                        ) from exc
+                    emit(
+                        "hire_update",
+                        f"{window.label} (id {test_id}) failed: {exc}",
+                        ok=False,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    emit(
+                        "hire_update",
+                        f"{window.label} (id {test_id}) failed: {exc}",
+                        ok=False,
+                    )
 
-                # Step 6: set each attempt's window on its OWN fresh page (the
-                # pattern proven reliable in standalone testing). test_ids[i] maps
-                # to windows[i]: 0=Contest, 1=RA1, 2=RA2, 3=RA3.
-                emit("hire_update", "Updating Hire Test windows for each attempt")
-                applied_count = 0
-                for i, test_id in enumerate(test_ids):
-                    if i >= len(windows):
-                        break
-                    window = windows[i]
-                    try:
-                        fresh = bm.new_hire_page(test_id)
-                        res = HireTest(fresh).update_window(window)
-                        if res.applied and res.verified:
-                            applied_count += 1
-                        emit(
-                            "hire_update",
-                            f"{window.label} (id {test_id}): "
-                            f"{window.start.date()} -> {window.end.date()} "
-                            f"(verified={res.verified})",
-                            ok=res.verified,
-                        )
-                        try:
-                            fresh.close()
-                        except Exception:  # noqa: BLE001
-                            pass
-                    except Exception as exc:  # noqa: BLE001
-                        emit(
-                            "hire_update",
-                            f"{window.label} (id {test_id}) failed: {exc}",
-                            ok=False,
-                        )
+            emit(
+                "hire_update",
+                f"Hire Test updated for {applied_count}/{len(test_ids)} attempts",
+                ok=applied_count == len(test_ids) and len(test_ids) > 0,
+            )
 
-                emit(
-                    "hire_update",
-                    f"Hire Test updated for {applied_count}/{len(test_ids)} attempts",
-                    ok=applied_count == len(test_ids) and len(test_ids) > 0,
-                )
-
-            bm.save_auth()
-            return schedule_result
+        bm.save_auth()
+        return schedule_result
 
 
 # Convenience function mirroring the natural-language entrypoint in the brief.

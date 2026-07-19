@@ -231,7 +231,8 @@ _STEP_KEYS = list(_STEPS.keys())
 _ERROR_HINTS: dict[str, str] = {
     "LibraryNotFoundError":  "Module not found in the library Excel — add it to the sheet or pick a Library Override.",
     "AmbiguousLibraryError": "Module maps to multiple libraries — use the Library Override field to pick one.",
-    "BrowserStepError":      "Browser automation failed. Your Scaler session may have expired — run `python setup_auth.py` to refresh it.",
+    "session expired":       "Scaler session expired. Run `python capture_login.py` locally to refresh auth, then upload the new storage_state.json via the panel below.",
+    "BrowserStepError":      "Browser automation failed. Scaler session may have expired — run `python capture_login.py` to refresh it.",
     "DuplicateContestError": "A contest with this batch name already exists in the tracker.",
     "TrackerUpdateError":    "Google Sheet tracker could not be updated — check service account credentials.",
     "past":                  "Start time is in the past — pick a future date and time.",
@@ -254,14 +255,43 @@ def _email_to_display_name(email: str) -> str:
     return " ".join(p.title() for p in parts if p)
 
 
-def _session_expired() -> bool:
+def _bootstrap_storage_state() -> None:
+    """Write storage_state.json from STORAGE_STATE_B64 secret when file absent.
+
+    On Streamlit Community Cloud the filesystem is ephemeral, so the file
+    won't survive a reboot.  The base64 secret is the durable source of truth.
+    """
     path = Path(BROWSER.storage_state) if BROWSER.storage_state else None
-    return path is None or not path.exists()
+    if path is None or path.exists():
+        return
+    b64: str = ""
+    try:
+        b64 = st.secrets.get("STORAGE_STATE_B64", "") or ""
+    except Exception:
+        pass
+    b64 = b64 or os.getenv("STORAGE_STATE_B64", "")
+    if b64:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(base64.b64decode(b64.strip()))
+        except Exception:
+            pass
+
+
+def _session_expired() -> bool:
+    """Return True if no usable auth state exists (file absent AND no secret)."""
+    path = Path(BROWSER.storage_state) if BROWSER.storage_state else None
+    if path is not None and path.exists():
+        return False
+    try:
+        return not bool(st.secrets.get("STORAGE_STATE_B64", ""))
+    except Exception:
+        return True
 
 
 def _error_hint(msg: str) -> str:
     for key, hint in _ERROR_HINTS.items():
-        if key in msg:
+        if key.lower() in msg.lower():
             return hint
     return ""
 
@@ -359,6 +389,11 @@ def _resolve_library_preview(module: str, program: str, override: Optional[str])
     except Exception:
         return "NV Contests (default)", None
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bootstrap storage_state from secrets (Community Cloud: filesystem is ephemeral)
+# ─────────────────────────────────────────────────────────────────────────────
+_bootstrap_storage_state()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Restore session from cookie (before login gate and sign-out handler).
@@ -479,15 +514,27 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Auth session banner
+# Auth session banner + admin upload panel
 # ─────────────────────────────────────────────────────────────────────────────
 if _session_expired():
     st.markdown(
         '<div class="auth-banner">⚠️ &nbsp;'
         '<strong>Scaler session missing or expired.</strong>&nbsp; '
-        'Browser automation will fail until you run <code>python setup_auth.py</code>.</div>',
+        'Run <code>python capture_login.py</code> locally, then upload '
+        'the generated <code>storage_state.json</code> below.</div>',
         unsafe_allow_html=True,
     )
+    _state_path = Path(BROWSER.storage_state) if BROWSER.storage_state else None
+    if _state_path is not None:
+        with st.expander("Upload auth state"):
+            _up = st.file_uploader(
+                "storage_state.json", type="json", label_visibility="collapsed"
+            )
+            if _up is not None:
+                _state_path.parent.mkdir(parents=True, exist_ok=True)
+                _state_path.write_bytes(_up.read())
+                st.success("Auth state installed — ready to run contests.")
+                st.rerun()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
