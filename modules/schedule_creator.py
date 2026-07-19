@@ -98,63 +98,32 @@ class ScheduleCreator:
         # library name can also appear elsewhere on the page as a link that
         # navigates to the Edit Library editor; clicking that would break the
         # flow. We click the option inside the open menu only.
-        try:
-            self.page.locator(".css-jlrko8 > .css-32j6ly").click()
-            search = library.library_name.replace("Academy: ", "").strip()
-            inp = self.page.locator("#react-select-4-input")
-            inp.fill(search)
-
-            # Wait up to 3s for at least one matching option to appear.
-            try:
-                self.page.wait_for_selector(
-                    "[id^='react-select-4-option']", timeout=3_000
-                )
-            except Exception:  # noqa: BLE001
-                self.page.wait_for_timeout(800)
-
-            # Prefer an option within the react-select menu (id starts with
-            # react-select-4-option). Fall back to a role=option match.
-            option = self.page.locator(
-                "[id^='react-select-4-option']"
-            ).filter(has_text=library.library_name)
-            if option.count() == 0:
-                option = self.page.get_by_role("option").filter(
-                    has_text=library.library_name
-                )
-            if option.count() == 0:
-                # Nothing matched — list what IS visible so the error is useful.
-                visible = self.page.locator("[id^='react-select-4-option']")
-                available = [
-                    visible.nth(i).inner_text(timeout=500)
-                    for i in range(min(visible.count(), 8))
-                ]
-                raise BrowserStepError(
-                    f"Library '{library.library_name}' not found in the dropdown. "
-                    f"Visible options: {available}. "
-                    f"Check the Library override or contact support."
-                )
-            option.first.click()
-
-            # Confirm the selection landed: wait for the dropdown to close.
-            try:
-                self.page.wait_for_selector(
-                    "[id^='react-select-4-option']", state="detached", timeout=3_000
-                )
-            except Exception:  # noqa: BLE001
-                self.page.wait_for_timeout(500)
-        except Exception as exc:  # noqa: BLE001
-            raise BrowserStepError(
-                f"Could not select library '{library.library_name}': {exc}"
-            )
+        self._select_library_in_dropdown(library.library_name)
 
         # --- mandatory skill evaluation checkbox ------------------------- #
         # Rule: tick the class whose label contains 'contest' or 'test' but
         # NOT 'discussion'. When the library has many contest classes (e.g.
         # NV Contests), prefer the one that also matches the module name.
+        # If the Excel-mapped library doesn't have the class, automatically
+        # fall back to NV Contests (covers modules not yet remapped in Excel).
+        _NV = "NV Contests"
         try:
             self._check_skill_eval_checkbox(preferred_name=library.module)
         except Exception as exc:  # noqa: BLE001
-            raise BrowserStepError(f"Could not tick Mandatory Skill Eval: {exc}")
+            if library.library_name == _NV:
+                raise BrowserStepError(f"Could not tick Mandatory Skill Eval: {exc}")
+            log.info(
+                "Skill-eval class not found in '%s'; retrying with NV Contests.",
+                library.library_name,
+            )
+            try:
+                self._select_library_in_dropdown(_NV)
+                self._check_skill_eval_checkbox(preferred_name=library.module)
+            except Exception as exc2:  # noqa: BLE001
+                raise BrowserStepError(
+                    f"Could not tick Mandatory Skill Eval in '{library.library_name}' "
+                    f"or NV Contests fallback: {exc2}"
+                )
 
         # --- schedule slot (day-dependent) ------------------------------- #
         # Try the preferred slot first; if it's not in the dropdown (e.g. today's
@@ -375,6 +344,52 @@ class ScheduleCreator:
         "and", "or", "to", "of", "for", "the", "in", "on",
         "a", "an", "is", "are", "its", "with", "at",
     }
+
+    def _select_library_in_dropdown(self, library_name: str) -> None:
+        """Open the library react-select and choose the given library name."""
+        try:
+            self.page.locator(".css-jlrko8 > .css-32j6ly").click()
+            search = library_name.replace("Academy: ", "").strip()
+            inp = self.page.locator("#react-select-4-input")
+            inp.fill(search)
+
+            try:
+                self.page.wait_for_selector(
+                    "[id^='react-select-4-option']", timeout=3_000
+                )
+            except Exception:  # noqa: BLE001
+                self.page.wait_for_timeout(800)
+
+            option = self.page.locator(
+                "[id^='react-select-4-option']"
+            ).filter(has_text=library_name)
+            if option.count() == 0:
+                option = self.page.get_by_role("option").filter(has_text=library_name)
+            if option.count() == 0:
+                visible = self.page.locator("[id^='react-select-4-option']")
+                available = [
+                    visible.nth(i).inner_text(timeout=500)
+                    for i in range(min(visible.count(), 8))
+                ]
+                raise BrowserStepError(
+                    f"Library '{library_name}' not found in the dropdown. "
+                    f"Visible options: {available}. "
+                    f"Check the Library override or contact support."
+                )
+            option.first.click()
+
+            try:
+                self.page.wait_for_selector(
+                    "[id^='react-select-4-option']", state="detached", timeout=3_000
+                )
+            except Exception:  # noqa: BLE001
+                self.page.wait_for_timeout(500)
+        except BrowserStepError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise BrowserStepError(
+                f"Could not select library '{library_name}': {exc}"
+            )
 
     def _check_skill_eval_checkbox(self, preferred_name: str = "") -> None:
         """
