@@ -66,6 +66,17 @@ if ! command -v ngrok &>/dev/null; then
     exit 1
 fi
 
+# ── Kill any stale Streamlit / ngrok from a previous run ─────────────────────
+# Safe to run on every start: lsof/pkill return non-zero when nothing matches,
+# which we suppress so the script doesn't exit under set -e.
+echo "Clearing any stale processes..."
+# Kill whatever process owns port $PORT (old Streamlit)
+lsof -ti :"$PORT" | xargs kill -TERM 2>/dev/null || true
+# Kill any ngrok process already using our domain
+pkill -f "ngrok.*${NGROK_DOMAIN}" 2>/dev/null || true
+# Brief pause to let sockets release
+sleep 1
+
 # ── PID tracking (used by cleanup trap) ─────────────────────────────────────
 STREAMLIT_PID=""
 NGROK_PID=""
@@ -110,7 +121,7 @@ echo "  Streamlit ready."
 # ── Start ngrok ──────────────────────────────────────────────────────────────
 echo "Starting ngrok tunnel → https://$NGROK_DOMAIN/ ..."
 ngrok http \
-    --domain="$NGROK_DOMAIN" \
+    --url="$NGROK_DOMAIN" \
     --log=stdout \
     "$PORT" \
     > >(tee -a "$LOG_DIR/ngrok.log") 2>&1 &
