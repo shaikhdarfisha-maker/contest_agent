@@ -30,8 +30,9 @@ from config import (
     BATCH_CLONE_TEMPLATE_NAME,
     URLS,
 )
+from modules.browser import check_session_interstitial
 from modules.logger import get_logger
-from modules.utils import BrowserStepError, SessionExpiredError, retry
+from modules.utils import BrowserStepError, SessionExpiredError, SessionLimitError, retry
 
 log = get_logger(__name__)
 
@@ -136,7 +137,12 @@ class BatchCreator:
         return BatchResult(batch_name=batch_name, batch_id=None)
 
     def _assert_on_batches_page(self) -> None:
-        """Raise SessionExpiredError immediately if we were redirected to login."""
+        """Fast-fail if the admin page was not reached (session expired or limit hit)."""
+        # Check for the session-limit interstitial first — it can appear at any URL.
+        # check_session_interstitial() auto-recovers (logout stale bot sessions +
+        # Proceed) and raises SessionLimitError only if recovery fails.
+        check_session_interstitial(self.page)
+
         url = self.page.url.lower()
         if "scaler.com/admin" not in url:
             raise SessionExpiredError(

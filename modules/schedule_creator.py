@@ -32,6 +32,7 @@ from config import (
     URLS,
     schedule_slot_for_today,
 )
+from modules.browser import check_session_interstitial
 from modules.library_reader import LibraryMatch
 from modules.logger import get_logger
 from modules.utils import BrowserStepError, retry
@@ -75,6 +76,7 @@ class ScheduleCreator:
             library.library_name,
         )
         self.page.goto("https://www.scaler.com/scm/classes/edit-super-batch")
+        check_session_interstitial(self.page)
         self.page.get_by_role("link", name="Schedule Classes").click()
         self.page.wait_for_load_state("networkidle")
 

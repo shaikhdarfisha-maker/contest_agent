@@ -45,6 +45,77 @@ _LOGIN_URL_PATTERNS = (
     "/auth",
 )
 
+_SESSION_LIMIT_HEADING = "Session limit reached"
+
+
+def check_session_interstitial(page: "Page") -> None:
+    """
+    Detect Scaler's 'Session limit reached' interstitial and attempt recovery:
+      1. Click 'Logout Session' on every 'Headless Chrome' row (stale bot sessions).
+      2. Click 'Proceed' and wait for navigation.
+
+    Does nothing when the interstitial is not present.
+    Raises SessionLimitError if the interstitial persists after recovery.
+    """
+    from modules.utils import SessionLimitError  # lazy to avoid circular import
+
+    try:
+        on_limit_page = (
+            page.locator("h1, h2, h3, h4")
+            .filter(has_text=_SESSION_LIMIT_HEADING)
+            .count() > 0
+        )
+    except Exception:
+        return
+
+    if not on_limit_page:
+        return
+
+    log.warning("Session limit interstitial detected — attempting auto-recovery")
+
+    try:
+        headless_rows = page.locator("tr").filter(has_text="Headless Chrome")
+        n = headless_rows.count()
+        log.info("Session limit: found %d stale Headless Chrome row(s)", n)
+        for i in range(n):
+            try:
+                logout = headless_rows.nth(i).get_by_text("Logout Session")
+                if logout.count() > 0:
+                    logout.first.click()
+                    page.wait_for_timeout(800)
+                    log.info("Logged out stale session %d/%d", i + 1, n)
+            except Exception as exc:
+                log.warning("Could not log out session row %d: %s", i + 1, exc)
+
+        proceed = page.get_by_role("button", name="Proceed")
+        if proceed.count() == 0:
+            proceed = page.get_by_text("Proceed")
+        proceed.first.click()
+        page.wait_for_load_state("domcontentloaded")
+        log.info("Session limit: clicked Proceed, checking result")
+    except Exception as exc:
+        raise SessionLimitError(
+            "Scaler's 2-session limit was hit and auto-recovery failed. "
+            "Log out an old session at scaler.com or wait, then retry."
+        ) from exc
+
+    try:
+        still_blocked = (
+            page.locator("h1, h2, h3, h4")
+            .filter(has_text=_SESSION_LIMIT_HEADING)
+            .count() > 0
+        )
+    except Exception:
+        still_blocked = False
+
+    if still_blocked:
+        raise SessionLimitError(
+            "Scaler's 2-session limit was hit and could not be auto-cleared. "
+            "Log out an old session at scaler.com or wait, then retry."
+        )
+
+    log.info("Session limit recovered — resuming run")
+
 # Chromium flags for low-memory / sandboxless environments
 # (Streamlit Community Cloud / Docker / CI).  Safe to pass on macOS too.
 _LAUNCH_ARGS = [
@@ -151,6 +222,29 @@ class BrowserManager:
                 any(pat in p.url.lower() for pat in _LOGIN_URL_PATTERNS)
                 for p in self._context.pages
             )
+        except Exception:  # noqa: BLE001
+            return False
+
+    def is_session_limit_page(self, page: Optional[Page] = None) -> bool:
+        """Return True if the given page shows the session-limit interstitial."""
+        check = page or self._page
+        if check is None:
+            return False
+        try:
+            return (
+                check.locator("h1, h2, h3, h4")
+                .filter(has_text=_SESSION_LIMIT_HEADING)
+                .count() > 0
+            )
+        except Exception:  # noqa: BLE001
+            return False
+
+    def any_session_limit_page(self) -> bool:
+        """Return True if ANY open page shows the session-limit interstitial."""
+        if self._context is None:
+            return False
+        try:
+            return any(self.is_session_limit_page(p) for p in self._context.pages)
         except Exception:  # noqa: BLE001
             return False
 

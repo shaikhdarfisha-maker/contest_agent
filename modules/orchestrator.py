@@ -69,6 +69,7 @@ from modules.utils import (
     ContestAgentError,
     LibraryNotFoundError,
     SessionExpiredError,
+    SessionLimitError,
     derive_attempt_windows,
     derive_attempt_windows_by_count,
     parse_datetime,
@@ -308,9 +309,15 @@ class ContestOrchestrator:
                     bm, page, request, library, batch_name, windows,
                     emit, contest_db_id, skip_hire_test,
                 )
-            except SessionExpiredError:
-                raise  # already correct type, screenshot taken below
+            except (SessionExpiredError, SessionLimitError):
+                raise  # already the right type; screenshot captured proactively
             except BrowserStepError as exc:
+                if bm.any_session_limit_page():
+                    bm.capture_error("session_limit")
+                    raise SessionLimitError(
+                        "Scaler's 2-session limit was hit. Log out an old session "
+                        "at scaler.com or wait, then retry."
+                    ) from exc
                 if bm.any_login_page():
                     bm.capture_error("session_expired")
                     raise SessionExpiredError(
@@ -400,6 +407,11 @@ class ContestOrchestrator:
                     except Exception:  # noqa: BLE001
                         pass
                 except BrowserStepError as exc:
+                    if bm.any_session_limit_page():
+                        raise SessionLimitError(
+                            "Scaler's 2-session limit was hit. Log out an old session "
+                            "at scaler.com or wait, then retry."
+                        ) from exc
                     if bm.any_login_page():
                         raise SessionExpiredError(
                             "Scaler session expired — run capture_login.py locally "

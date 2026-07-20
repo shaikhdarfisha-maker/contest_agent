@@ -53,6 +53,10 @@ class SessionExpiredError(ContestAgentError):
     """Raised when the browser is redirected to a login/SSO page mid-run."""
 
 
+class SessionLimitError(ContestAgentError):
+    """Raised when Scaler's 2-session limit is hit and cannot be auto-cleared."""
+
+
 # --------------------------------------------------------------------------- #
 # Retry decorator
 # --------------------------------------------------------------------------- #
