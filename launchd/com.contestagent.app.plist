@@ -36,6 +36,15 @@
     <key>WorkingDirectory</key>
     <string>/Users/darfishashaikh/Downloads/contest_agent</string>
 
+    <!-- launchd runs with a minimal PATH; extend it so ngrok and python3
+         (installed via Homebrew at /usr/local/bin or /opt/homebrew/bin) are found.
+         start.sh resolves the Streamlit launcher itself (no PATH dependency). -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
     <!-- Start automatically at login -->
     <key>RunAtLoad</key>
     <true/>

@@ -36,12 +36,24 @@ if [[ ! -f "$SCRIPT_DIR/data/storage_state.json" ]]; then
     exit 1
 fi
 
-if ! command -v streamlit &>/dev/null; then
+# ── Activate venv if present and not already active ──────────────────────────
+if [[ -f "$SCRIPT_DIR/.venv/bin/activate" && -z "${VIRTUAL_ENV:-}" ]]; then
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/.venv/bin/activate"
+fi
+
+# ── Resolve Streamlit launcher ───────────────────────────────────────────────
+# 1. prefer the `streamlit` binary on PATH (covers venv and pipx installs)
+# 2. fall back to `python3 -m streamlit` (user-site / system install)
+STREAMLIT_CMD=""
+if command -v streamlit &>/dev/null; then
+    STREAMLIT_CMD="streamlit"
+elif python3 -c "import streamlit" &>/dev/null 2>&1; then
+    STREAMLIT_CMD="python3 -m streamlit"
+else
     echo ""
-    echo "  ERROR: 'streamlit' not found in PATH."
-    if [[ -f "$SCRIPT_DIR/.venv/bin/activate" ]]; then
-        echo "  Activate the venv first:  source .venv/bin/activate"
-    fi
+    echo "  ERROR: Streamlit is not installed or not importable."
+    echo "  Fix:   pip3 install -r requirements.txt"
     echo ""
     exit 1
 fi
@@ -52,12 +64,6 @@ if ! command -v ngrok &>/dev/null; then
     echo "  Install:  brew install ngrok/ngrok/ngrok"
     echo ""
     exit 1
-fi
-
-# ── Activate venv if present and not already active ──────────────────────────
-if [[ -f "$SCRIPT_DIR/.venv/bin/activate" && -z "${VIRTUAL_ENV:-}" ]]; then
-    # shellcheck disable=SC1091
-    source "$SCRIPT_DIR/.venv/bin/activate"
 fi
 
 # ── PID tracking (used by cleanup trap) ─────────────────────────────────────
@@ -76,8 +82,8 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # ── Start Streamlit ──────────────────────────────────────────────────────────
-echo "Starting Streamlit on port $PORT..."
-streamlit run streamlit_app.py \
+echo "Starting Streamlit on port $PORT  (launcher: $STREAMLIT_CMD)..."
+$STREAMLIT_CMD run streamlit_app.py \
     --server.port "$PORT" \
     --server.headless true \
     --server.runOnSave false \
