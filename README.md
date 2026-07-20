@@ -373,6 +373,7 @@ If you ever retry Community Cloud deployment:
 | "Scaler session expired" | `storage_state.json` is stale | `python3 capture_login.py` → restart app |
 | "Session limit reached" — auto-recovers | Scaler's 2-session limit hit | Usually self-resolves; if not, log out an old browser tab at scaler.com |
 | App unreachable at public URL | Mac asleep or ngrok tunnel down | Wake Mac, check `./start.sh` is running |
+| `ERR_NGROK_334` on start | Previous ngrok process still alive (local or cloud-side) | `./start.sh` now runs `killall ngrok` + 5 s wait; if it still fails, `killall ngrok && sleep 5 && ./start.sh` |
 | "run in progress" banner | Previous run didn't finish | Wait 15 min (stale-lock timeout) or `rm data/run.lock` |
 | `LibraryNotFoundError` | Module not in Library Excel | Add a row to `data/Library__All_Programs.xlsx` or use Library Override |
 | `AmbiguousLibraryError` | Module has duplicate rows | Remove duplicate from Excel |

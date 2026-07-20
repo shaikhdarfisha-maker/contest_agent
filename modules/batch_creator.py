@@ -155,8 +155,7 @@ class BatchCreator:
                 )
             raise SessionExpiredError(
                 f"Redirected away from admin page (now at {self.page.url!r}) — "
-                "Scaler session expired. Run capture_login.py locally to refresh "
-                "auth, then update STORAGE_STATE_B64 in Streamlit secrets."
+                "Scaler session expired. Run: python3 capture_login.py, then restart ./start.sh"
             )
 
     def _find_existing_batch(self, batch_name: str) -> Optional[str]:

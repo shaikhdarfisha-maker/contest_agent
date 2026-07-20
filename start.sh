@@ -42,6 +42,18 @@ if [[ -f "$SCRIPT_DIR/.venv/bin/activate" && -z "${VIRTUAL_ENV:-}" ]]; then
     source "$SCRIPT_DIR/.venv/bin/activate"
 fi
 
+# ── Sync dependencies (fast no-op when already up to date) ──────────────────
+if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
+    PIP_CMD=""
+    if command -v pip &>/dev/null; then PIP_CMD="pip"
+    elif command -v pip3 &>/dev/null; then PIP_CMD="pip3"
+    fi
+    if [[ -n "$PIP_CMD" ]]; then
+        echo "Syncing dependencies..."
+        $PIP_CMD install -r "$SCRIPT_DIR/requirements.txt" -q --disable-pip-version-check
+    fi
+fi
+
 # ── Resolve Streamlit launcher ───────────────────────────────────────────────
 # 1. prefer the `streamlit` binary on PATH (covers venv and pipx installs)
 # 2. fall back to `python3 -m streamlit` (user-site / system install)
@@ -67,15 +79,16 @@ if ! command -v ngrok &>/dev/null; then
 fi
 
 # ── Kill any stale Streamlit / ngrok from a previous run ─────────────────────
-# Safe to run on every start: lsof/pkill return non-zero when nothing matches,
-# which we suppress so the script doesn't exit under set -e.
 echo "Clearing any stale processes..."
-# Kill whatever process owns port $PORT (old Streamlit)
+# Kill whatever process owns port $PORT (old Streamlit / any prior process)
 lsof -ti :"$PORT" | xargs kill -TERM 2>/dev/null || true
-# Kill any ngrok process already using our domain
-pkill -f "ngrok.*${NGROK_DOMAIN}" 2>/dev/null || true
-# Brief pause to let sockets release
-sleep 1
+# Kill ALL ngrok processes by name — domain may not appear in the command line
+# (e.g. set via ngrok.yml or a different flag), so pattern matching is unreliable
+killall -TERM ngrok 2>/dev/null || true
+# Wait for sockets to release AND for ngrok cloud to deregister the endpoint
+# (ERR_NGROK_334 occurs even when the local process is dead but cloud hasn't
+# released the tunnel yet; 5 s is enough in practice)
+sleep 5
 
 # ── PID tracking (used by cleanup trap) ─────────────────────────────────────
 STREAMLIT_PID=""
