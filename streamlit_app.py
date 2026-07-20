@@ -257,13 +257,14 @@ def _email_to_display_name(email: str) -> str:
 
 
 def _bootstrap_storage_state() -> None:
-    """Write storage_state.json from STORAGE_STATE_B64 secret when file absent.
+    """Write storage_state.json from STORAGE_STATE_B64 secret.
 
-    On Streamlit Community Cloud the filesystem is ephemeral, so the file
-    won't survive a reboot.  The base64 secret is the durable source of truth.
+    Always overwrites when a secret is present so that updating the secret in
+    Streamlit Cloud immediately takes effect even on a warm (cached) container.
+    Falls back to the existing file when no secret is configured.
     """
     path = Path(BROWSER.storage_state) if BROWSER.storage_state else None
-    if path is None or path.exists():
+    if path is None:
         return
     b64: str = ""
     try:
