@@ -35,6 +35,16 @@ from modules.utils import BrowserStepError, SessionExpiredError, retry
 
 log = get_logger(__name__)
 
+# The Name-column filter button — present once the SPA table has fully rendered.
+# Waiting for this selector is more reliable than `networkidle` because the admin
+# SPA polls in the background and never reaches a true idle state.
+_FILTER_BTN_SEL = (
+    "th:nth-child(2) > .data-table__header-item > "
+    ".data-table__header-actions > "
+    ".tappable.btn.btn-light.btn-small.data-table__action."
+    "data-table__action--filter"
+)
+
 
 @dataclass
 class BatchResult:
@@ -53,8 +63,7 @@ class BatchCreator:
         """Clone an existing NV batch, or reuse it if it already exists."""
         log.info("Creating batch via clone: %s", batch_name)
         self.page.goto(URLS["admin_batches"])
-        # SPA table populates via XHR after the `load` event — wait until idle.
-        self.page.wait_for_load_state("networkidle")
+        self.page.wait_for_selector(_FILTER_BTN_SEL)
         self._assert_on_batches_page()
 
         # Guard: reuse if a previous (failed) run already created this batch.
@@ -68,7 +77,7 @@ class BatchCreator:
 
         # Batch doesn't exist — reload and filter by template keyword to clone.
         self.page.goto(URLS["admin_batches"])
-        self.page.wait_for_load_state("networkidle")
+        self.page.wait_for_selector(_FILTER_BTN_SEL)
         self._assert_on_batches_page()
         try:
             self.page.locator(
@@ -83,7 +92,7 @@ class BatchCreator:
             filter_form.get_by_role("textbox").click()
             filter_form.get_by_role("textbox").fill(BATCH_CLONE_FILTER_KEYWORD)
             self.page.get_by_role("button", name="Apply").click()
-            self.page.wait_for_load_state("networkidle")
+            self.page.locator("form").filter(has_text="KeywordClearApply").wait_for(state="hidden")
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not filter batches to clone: {exc}")
 
@@ -115,7 +124,7 @@ class BatchCreator:
                 batch_name, exc,
             )
             self.page.goto(URLS["admin_batches"])
-            self.page.wait_for_load_state("networkidle")
+            self.page.wait_for_selector(_FILTER_BTN_SEL)
             fallback_id = self._find_existing_batch(batch_name)
             if fallback_id is not None:
                 log.warning(
@@ -155,10 +164,12 @@ class BatchCreator:
             filter_form.get_by_role("textbox").click()
             filter_form.get_by_role("textbox").fill(batch_name)
             self.page.get_by_role("button", name="Apply").click()
-            self.page.wait_for_load_state("networkidle")
+            self.page.locator("form").filter(has_text="KeywordClearApply").wait_for(state="hidden")
 
             row = self.page.locator("tr").filter(has_text=batch_name)
-            if row.count() == 0:
+            try:
+                row.first.wait_for(state="visible", timeout=10_000)
+            except Exception:
                 return None
             text = row.first.inner_text(timeout=3_000)
             id_match = re.search(r"\b(\d{3,})\b", text)
