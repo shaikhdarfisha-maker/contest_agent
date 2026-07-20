@@ -25,7 +25,7 @@ import streamlit as st
 from streamlit_cookies_controller import CookieController as _CookieCtrl
 
 from config import (
-    APP_PASSWORD, BROWSER, DEFAULT_PROGRAM, GOOGLE_SHEET_ID,
+    APP_PASSWORD, BROWSER, DATA_DIR, DEFAULT_PROGRAM, GOOGLE_SHEET_ID,
     PROGRAMS, next_slot_datetime,
 )
 from modules.library_reader import LibraryReader
@@ -433,6 +433,43 @@ def _auth_diverged() -> bool:
         return False
 
 
+_RUN_LOCK = DATA_DIR / "run.lock"
+_RUN_LOCK_STALE_SECS = 900  # 15 min — well beyond the longest possible run
+
+
+def _acquire_run_lock() -> bool:
+    """Create a run-lock so concurrent contest submissions are blocked.
+
+    Returns True if the lock was acquired.  If a lock already exists and is
+    younger than _RUN_LOCK_STALE_SECS, returns False (another run is active).
+    Stale locks (e.g. from a crash or laptop restart) are removed first.
+    """
+    if _RUN_LOCK.exists():
+        age = _time.time() - _RUN_LOCK.stat().st_mtime
+        if age < _RUN_LOCK_STALE_SECS:
+            return False
+        _RUN_LOCK.unlink(missing_ok=True)
+    try:
+        _RUN_LOCK.write_text(str(os.getpid()))
+        return True
+    except Exception:
+        return False
+
+
+def _release_run_lock() -> None:
+    try:
+        _RUN_LOCK.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _run_locked() -> bool:
+    """True if another run is currently active (lock is fresh)."""
+    if not _RUN_LOCK.exists():
+        return False
+    return _time.time() - _RUN_LOCK.stat().st_mtime < _RUN_LOCK_STALE_SECS
+
+
 def _error_hint(msg: str) -> str:
     for key, hint in _ERROR_HINTS.items():
         if key.lower() in msg.lower():
@@ -764,6 +801,16 @@ with tab_create:
             st.rerun()
 
         if confirmed:
+            if _run_locked():
+                st.error(
+                    "A contest run is already in progress. "
+                    "Wait for it to complete, then retry."
+                )
+                st.stop()
+            if not _acquire_run_lock():
+                st.error("Could not acquire run lock — please retry in a moment.")
+                st.stop()
+
             # ── LIVE PROGRESS ────────────────────────────────────────────────
             prog_header = st.empty()
             prog_header.markdown(
@@ -820,19 +867,22 @@ with tab_create:
             _mark_running("library")
 
             with st.spinner("Running automation — this takes 2–4 minutes…"):
-                outcome = create_contest(
-                    module=pending["module"],
-                    contest_name=pending["contest_name"],
-                    start=pending["start_dt"],
-                    program=pending["program"],
-                    library_name=pending["library_override"],
-                    batch_name_override=pending["contest_name"],
-                    browser=True,
-                    dry_run_tracker=False,
-                    overwrite_tracker=True,
-                    progress=progress,
-                    created_by=_user.get("email", "Unknown"),
-                )
+                try:
+                    outcome = create_contest(
+                        module=pending["module"],
+                        contest_name=pending["contest_name"],
+                        start=pending["start_dt"],
+                        program=pending["program"],
+                        library_name=pending["library_override"],
+                        batch_name_override=pending["contest_name"],
+                        browser=True,
+                        dry_run_tracker=False,
+                        overwrite_tracker=True,
+                        progress=progress,
+                        created_by=_user.get("email", "Unknown"),
+                    )
+                finally:
+                    _release_run_lock()
 
             st.session_state.pop("pending", None)
             _suggest_name.clear()

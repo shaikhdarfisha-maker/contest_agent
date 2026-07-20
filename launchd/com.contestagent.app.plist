@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent for NV Contest Agent (Mac auto-start on login).
+
+  INSTALL (one-time):
+    1. Update WorkingDirectory and the script path below to match your machine.
+    2. cp launchd/com.contestagent.app.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.contestagent.app.plist
+
+  UNINSTALL:
+    launchctl unload ~/Library/LaunchAgents/com.contestagent.app.plist
+    rm ~/Library/LaunchAgents/com.contestagent.app.plist
+
+  LOGS:
+    tail -f /Users/darfishashaikh/Downloads/contest_agent/logs/launchd.log
+    tail -f /Users/darfishashaikh/Downloads/contest_agent/logs/streamlit.log
+    tail -f /Users/darfishashaikh/Downloads/contest_agent/logs/ngrok.log
+
+  NOTE: The Mac must not sleep while users are accessing the app.
+    → System Settings → Battery → Prevent automatic sleeping: ON
+    → Or use Amphetamine (free, App Store) to keep the Mac awake on schedule.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.contestagent.app</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/darfishashaikh/Downloads/contest_agent/start.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/darfishashaikh/Downloads/contest_agent</string>
+
+    <!-- Start automatically at login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart automatically if start.sh exits (e.g. ngrok disconnects) -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Throttle rapid restarts: wait 30 s before retrying -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/darfishashaikh/Downloads/contest_agent/logs/launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/darfishashaikh/Downloads/contest_agent/logs/launchd.log</string>
+</dict>
+</plist>

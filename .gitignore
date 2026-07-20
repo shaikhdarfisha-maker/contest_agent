@@ -8,6 +8,7 @@ data/contest_agent.sqlite3
 data/storage_state.json
 data/storage_state.json.bootstrap_hash
 data/storage_state.b64
+data/run.lock
 data/service_account.json
 data/service_account.b64
 data/NV_contests_Tracker_Q2-2026_.xlsx
