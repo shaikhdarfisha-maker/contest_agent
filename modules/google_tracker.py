@@ -53,19 +53,47 @@ _FORMULA_COLS = {11, 12, 13, 14}  # K, L, M, N
 
 def _build_credentials() -> Optional[Credentials]:
     """
-    Build Google credentials from a base64-encoded env var — no file required.
-    Checks GOOGLE_CREDS_B64 first, then SERVICE_ACCOUNT_B64 for backward compat.
-    Returns None when neither env var is set.
+    Build Google credentials from a base64-encoded secret — no file required.
+
+    Resolution order:
+      1. GOOGLE_CREDS_B64 env var (set by streamlit_app bootstrap)
+      2. SERVICE_ACCOUNT_B64 env var (legacy name, same mechanism)
+      3. st.secrets["GOOGLE_CREDS_B64"] directly (fallback when bootstrap
+         silently failed — safe no-op outside Streamlit)
+      4. st.secrets["SERVICE_ACCOUNT_B64"] (legacy name)
+
+    Returns None if no usable secret is found (caller falls back to file).
     """
-    for key in ("GOOGLE_CREDS_B64", "SERVICE_ACCOUNT_B64"):
-        b64 = os.getenv(key, "")
-        if not b64:
-            continue
+    _KEYS = ("GOOGLE_CREDS_B64", "SERVICE_ACCOUNT_B64")
+
+    def _from_b64(b64: str, source: str) -> Optional[Credentials]:
         try:
             info = json.loads(base64.b64decode(b64.strip()))
             return Credentials.from_service_account_info(info, scopes=_SCOPES)
         except Exception as exc:
-            log.warning("Could not build credentials from %s: %s", key, exc)
+            log.warning("Could not build credentials from %s: %s", source, exc)
+            return None
+
+    # 1 & 2 — env vars (populated by _bootstrap_cloud_config in streamlit_app)
+    for key in _KEYS:
+        b64 = os.getenv(key, "")
+        if b64:
+            creds = _from_b64(b64, f"env:{key}")
+            if creds is not None:
+                return creds
+
+    # 3 & 4 — direct Streamlit secrets read (when env var injection was skipped)
+    try:
+        import streamlit as _st  # soft import — not installed outside Streamlit
+        for key in _KEYS:
+            b64 = str(_st.secrets.get(key, "") or "")
+            if b64:
+                creds = _from_b64(b64, f"st.secrets:{key}")
+                if creds is not None:
+                    return creds
+    except Exception:
+        pass  # not running inside Streamlit, or secrets not configured
+
     return None
 
 
