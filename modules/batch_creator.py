@@ -138,13 +138,21 @@ class BatchCreator:
 
     def _assert_on_batches_page(self) -> None:
         """Fast-fail if the admin page was not reached (session expired or limit hit)."""
-        # Check for the session-limit interstitial first — it can appear at any URL.
-        # check_session_interstitial() auto-recovers (logout stale bot sessions +
-        # Proceed) and raises SessionLimitError only if recovery fails.
+        # check_session_interstitial handles both heading-based and URL-based
+        # session-limit pages, auto-recovers, and raises SessionLimitError if stuck.
         check_session_interstitial(self.page)
 
         url = self.page.url.lower()
         if "scaler.com/admin" not in url:
+            # /users/session-management/ = Scaler's 2-session-limit redirect
+            # (check_session_interstitial already tried to recover; this is the
+            # hard-fail path when it couldn't proceed automatically).
+            if "session-management" in url:
+                raise SessionLimitError(
+                    f"Scaler's session-management gate could not be auto-cleared "
+                    f"(now at {self.page.url!r}). Log out an old browser session "
+                    "at scaler.com/users/session-management, then retry."
+                )
             raise SessionExpiredError(
                 f"Redirected away from admin page (now at {self.page.url!r}) — "
                 "Scaler session expired. Run capture_login.py locally to refresh "

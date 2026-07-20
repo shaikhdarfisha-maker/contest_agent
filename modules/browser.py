@@ -18,6 +18,7 @@ Use capture_login.py (not this module) for the one-time auth capture.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
@@ -46,75 +47,110 @@ _LOGIN_URL_PATTERNS = (
 )
 
 _SESSION_LIMIT_HEADING = "Session limit reached"
+_SESSION_MGMT_URL_FRAGMENT = "/users/session-management"
+
+
+def _on_session_limit_page(page: "Page") -> bool:
+    """True if page is any variant of Scaler's session-limit gate."""
+    try:
+        return (
+            _SESSION_MGMT_URL_FRAGMENT in page.url
+            or page.locator("h1, h2, h3, h4")
+            .filter(has_text=_SESSION_LIMIT_HEADING)
+            .count() > 0
+        )
+    except Exception:
+        return False
+
+
+def _click_proceed(page: "Page") -> bool:
+    """Click Proceed/Continue; return True if we navigated away from the interstitial."""
+    try:
+        for name in ("Proceed", "Continue"):
+            btn = page.get_by_role("button", name=name)
+            if btn.count() > 0:
+                btn.first.click()
+                page.wait_for_load_state("domcontentloaded", timeout=10_000)
+                return not _on_session_limit_page(page)
+        # Fallback: any element whose text contains the word
+        btn = page.locator("a, button").filter(
+            has_text=re.compile(r"\b(Proceed|Continue)\b", re.I)
+        )
+        if btn.count() > 0:
+            btn.first.click()
+            page.wait_for_load_state("domcontentloaded", timeout=10_000)
+            return not _on_session_limit_page(page)
+        return False
+    except Exception:
+        return not _on_session_limit_page(page)
 
 
 def check_session_interstitial(page: "Page") -> None:
     """
-    Detect Scaler's 'Session limit reached' interstitial and attempt recovery:
-      1. Click 'Logout Session' on every 'Headless Chrome' row (stale bot sessions).
-      2. Click 'Proceed' and wait for navigation.
+    Detect and recover from Scaler's session-limit gate.
 
-    Does nothing when the interstitial is not present.
-    Raises SessionLimitError if the interstitial persists after recovery.
+    Detection (either triggers recovery):
+      A. URL contains /users/session-management (fires before DOM loads — primary)
+      B. Page heading "Session limit reached" (inline interstitial — fallback)
+
+    Recovery sequence (safe — never self-evicts the current session):
+      1. Click "Proceed" first. If Scaler lets us through, done — no eviction.
+      2. Still blocked: evict OLDEST Headless Chrome row(s), preserving the LAST
+         row in DOM order (assumed newest login = the current running session).
+         Real-browser rows (Mac/Windows Chrome) are never touched.
+      3. Click "Proceed" again. If clear, done.
+      4. Still blocked → raise SessionLimitError.
+
+    Does nothing when neither detection pattern is present.
     """
     from modules.utils import SessionLimitError  # lazy to avoid circular import
 
-    try:
-        on_limit_page = (
-            page.locator("h1, h2, h3, h4")
-            .filter(has_text=_SESSION_LIMIT_HEADING)
-            .count() > 0
-        )
-    except Exception:
+    if not _on_session_limit_page(page):
         return
 
-    if not on_limit_page:
+    log.warning("Session-limit page detected at %r — attempting auto-recovery", page.url)
+
+    # Step 1: Try Proceed first (works when Scaler just needs acknowledgment)
+    if _click_proceed(page):
+        log.info("Session limit cleared via Proceed — no eviction needed")
         return
 
-    log.warning("Session limit interstitial detected — attempting auto-recovery")
+    log.info("Proceed alone did not clear interstitial — attempting selective headless eviction")
 
+    # Step 2: Evict OLDEST Headless Chrome rows, preserve LAST (newest = us)
     try:
         headless_rows = page.locator("tr").filter(has_text="Headless Chrome")
         n = headless_rows.count()
-        log.info("Session limit: found %d stale Headless Chrome row(s)", n)
-        for i in range(n):
-            try:
-                logout = headless_rows.nth(i).get_by_text("Logout Session")
-                if logout.count() > 0:
-                    logout.first.click()
-                    page.wait_for_timeout(800)
-                    log.info("Logged out stale session %d/%d", i + 1, n)
-            except Exception as exc:
-                log.warning("Could not log out session row %d: %s", i + 1, exc)
-
-        proceed = page.get_by_role("button", name="Proceed")
-        if proceed.count() == 0:
-            proceed = page.get_by_text("Proceed")
-        proceed.first.click()
-        page.wait_for_load_state("domcontentloaded")
-        log.info("Session limit: clicked Proceed, checking result")
+        log.info("Session-limit table: %d Headless Chrome row(s) found", n)
+        if n <= 1:
+            log.warning(
+                "Only %d Headless Chrome row(s) — skipping eviction (likely our own session)", n
+            )
+        else:
+            evicted = 0
+            for i in range(n - 1):  # skip last row (newest login = current session)
+                try:
+                    logout = headless_rows.nth(i).get_by_text("Logout Session")
+                    if logout.count() > 0:
+                        logout.first.click()
+                        page.wait_for_timeout(800)
+                        evicted += 1
+                        log.info("Evicted stale headless session %d/%d", i + 1, n - 1)
+                except Exception as exc:
+                    log.warning("Could not evict headless row %d: %s", i + 1, exc)
+            log.info("Evicted %d of %d stale headless session(s)", evicted, n - 1)
     except Exception as exc:
-        raise SessionLimitError(
-            "Scaler's 2-session limit was hit and auto-recovery failed. "
-            "Log out an old session at scaler.com or wait, then retry."
-        ) from exc
+        log.warning("Could not enumerate headless sessions: %s", exc)
 
-    try:
-        still_blocked = (
-            page.locator("h1, h2, h3, h4")
-            .filter(has_text=_SESSION_LIMIT_HEADING)
-            .count() > 0
-        )
-    except Exception:
-        still_blocked = False
+    # Step 3: Try Proceed again after eviction
+    if _click_proceed(page):
+        log.info("Session limit cleared after selective eviction")
+        return
 
-    if still_blocked:
-        raise SessionLimitError(
-            "Scaler's 2-session limit was hit and could not be auto-cleared. "
-            "Log out an old session at scaler.com or wait, then retry."
-        )
-
-    log.info("Session limit recovered — resuming run")
+    raise SessionLimitError(
+        "Scaler's session-limit gate could not be auto-cleared. "
+        "Log out an old session at scaler.com/users/session-management, then retry."
+    )
 
 # Chromium flags for low-memory / sandboxless environments
 # (Streamlit Community Cloud / Docker / CI).  Safe to pass on macOS too.
@@ -168,6 +204,13 @@ class BrowserManager:
     ) -> None:
         if exc is not None:
             self.capture_error("unhandled_exception")
+        else:
+            # Persist any cookies refreshed during the run (e.g. after session-limit
+            # recovery) so the next run doesn't have to re-authenticate.
+            try:
+                self.save_auth()
+            except Exception:
+                pass
         try:
             if self._context:
                 self._context.close()
@@ -226,25 +269,18 @@ class BrowserManager:
             return False
 
     def is_session_limit_page(self, page: Optional[Page] = None) -> bool:
-        """Return True if the given page shows the session-limit interstitial."""
+        """Return True if the given page is any variant of the session-limit gate."""
         check = page or self._page
         if check is None:
             return False
-        try:
-            return (
-                check.locator("h1, h2, h3, h4")
-                .filter(has_text=_SESSION_LIMIT_HEADING)
-                .count() > 0
-            )
-        except Exception:  # noqa: BLE001
-            return False
+        return _on_session_limit_page(check)
 
     def any_session_limit_page(self) -> bool:
-        """Return True if ANY open page shows the session-limit interstitial."""
+        """Return True if ANY open page is a session-limit gate."""
         if self._context is None:
             return False
         try:
-            return any(self.is_session_limit_page(p) for p in self._context.pages)
+            return any(_on_session_limit_page(p) for p in self._context.pages)
         except Exception:  # noqa: BLE001
             return False
 

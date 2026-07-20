@@ -16,6 +16,11 @@ from datetime import datetime, time
 from pathlib import Path
 from typing import Optional
 
+# Hash of the decoded storage-state bytes written at bootstrap time.
+# Used to detect when save_auth() has refreshed the session since bootstrap.
+# Reset to None each script rerun; set by _bootstrap_storage_state().
+_bootstrap_state_hash: Optional[str] = None
+
 import streamlit as st
 from streamlit_cookies_controller import CookieController as _CookieCtrl
 
@@ -257,12 +262,19 @@ def _email_to_display_name(email: str) -> str:
 
 
 def _bootstrap_storage_state() -> None:
-    """Write storage_state.json from STORAGE_STATE_B64 secret.
+    """Write storage_state.json from STORAGE_STATE_B64 secret (smart-overwrite).
 
-    Always overwrites when a secret is present so that updating the secret in
-    Streamlit Cloud immediately takes effect even on a warm (cached) container.
-    Falls back to the existing file when no secret is configured.
+    Overwrites the file only when the secret has changed since the last
+    bootstrap, so any session refresh saved by BrowserManager.save_auth()
+    during a run survives subsequent reruns without being overwritten by the
+    now-stale secret.
+
+    Divergence tracking: sets the module-level _bootstrap_state_hash to the
+    MD5 of the decoded bytes so _auth_diverged() can detect when save_auth()
+    has written a fresher session to disk.
     """
+    global _bootstrap_state_hash
+
     path = Path(BROWSER.storage_state) if BROWSER.storage_state else None
     if path is None:
         return
@@ -272,12 +284,38 @@ def _bootstrap_storage_state() -> None:
     except Exception:
         pass
     b64 = b64 or os.getenv("STORAGE_STATE_B64", "")
-    if b64:
+    if not b64:
+        return
+
+    try:
+        raw = base64.b64decode(b64.strip())
+    except Exception:
+        return
+
+    decoded_hash = hashlib.md5(raw).hexdigest()
+    sidecar = Path(str(path) + ".bootstrap_hash")
+
+    # Skip overwrite if file already reflects this exact secret.
+    # The sidecar records the MD5 of the bytes written from the secret;
+    # if it matches the current secret's hash, the file is current
+    # (or has been refreshed by save_auth — either way, keep it).
+    if path.exists():
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(base64.b64decode(b64.strip()))
+            stored = sidecar.read_text().strip() if sidecar.exists() else ""
         except Exception:
-            pass
+            stored = ""
+        if stored == decoded_hash:
+            _bootstrap_state_hash = decoded_hash
+            return
+
+    # Secret changed (or file missing) — write from secret and update sidecar.
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(raw)
+        sidecar.write_text(decoded_hash)
+        _bootstrap_state_hash = decoded_hash
+    except Exception:
+        pass
 
 
 @st.cache_resource
@@ -358,6 +396,41 @@ def _session_expired() -> bool:
         return not bool(st.secrets.get("STORAGE_STATE_B64", ""))
     except Exception:
         return True
+
+
+def _auth_last_refreshed() -> Optional[str]:
+    """Human-readable age of storage_state.json (set by bootstrap or save_auth)."""
+    path = Path(BROWSER.storage_state) if BROWSER.storage_state else None
+    if path is None or not path.exists():
+        return None
+    delta = datetime.now() - datetime.fromtimestamp(path.stat().st_mtime)
+    secs = int(delta.total_seconds())
+    if secs < 60:
+        return "just now"
+    if secs < 3600:
+        m = secs // 60
+        return f"{m} min{'s' if m != 1 else ''} ago"
+    if secs < 86400:
+        h = secs // 3600
+        return f"{h} hr{'s' if h != 1 else ''} ago"
+    return datetime.fromtimestamp(path.stat().st_mtime).strftime("%d %b %Y %H:%M")
+
+
+def _auth_diverged() -> bool:
+    """True if save_auth() refreshed storage_state.json since the last bootstrap.
+
+    Divergence means the live session is fresher than STORAGE_STATE_B64 —
+    the operator should re-export and update the secret to persist it.
+    """
+    if _bootstrap_state_hash is None:
+        return False
+    path = Path(BROWSER.storage_state) if BROWSER.storage_state else None
+    if path is None or not path.exists():
+        return False
+    try:
+        return hashlib.md5(path.read_bytes()).hexdigest() != _bootstrap_state_hash
+    except Exception:
+        return False
 
 
 def _error_hint(msg: str) -> str:
@@ -608,6 +681,21 @@ if _session_expired():
                 _state_path.write_bytes(_up.read())
                 st.success("Auth state installed — ready to run contests.")
                 st.rerun()
+else:
+    # Session is active — show refresh time so operator knows when to re-export.
+    _refresh_time = _auth_last_refreshed()
+    if _refresh_time:
+        if _auth_diverged():
+            __import__("logging").getLogger(__name__).info(
+                "Auth state refreshed during run (live session diverged from "
+                "STORAGE_STATE_B64 secret). Update the secret to persist across restarts."
+            )
+            st.caption(
+                f"Auth refreshed during run ({_refresh_time}) — "
+                "update STORAGE_STATE_B64 in Streamlit secrets to persist across restarts."
+            )
+        else:
+            st.caption(f"Auth: last refreshed {_refresh_time}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Tabs
