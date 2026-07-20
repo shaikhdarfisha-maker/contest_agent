@@ -18,9 +18,13 @@ Required .env vars:
 
 from __future__ import annotations
 
+import base64
 import calendar
+import json
+import os
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import gspread
@@ -47,6 +51,24 @@ _SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 _FORMULA_COLS = {11, 12, 13, 14}  # K, L, M, N
 
 
+def _build_credentials() -> Optional[Credentials]:
+    """
+    Build Google credentials from a base64-encoded env var — no file required.
+    Checks GOOGLE_CREDS_B64 first, then SERVICE_ACCOUNT_B64 for backward compat.
+    Returns None when neither env var is set.
+    """
+    for key in ("GOOGLE_CREDS_B64", "SERVICE_ACCOUNT_B64"):
+        b64 = os.getenv(key, "")
+        if not b64:
+            continue
+        try:
+            info = json.loads(base64.b64decode(b64.strip()))
+            return Credentials.from_service_account_info(info, scopes=_SCOPES)
+        except Exception as exc:
+            log.warning("Could not build credentials from %s: %s", key, exc)
+    return None
+
+
 def _fmt(dt: datetime) -> str:
     """Format a datetime so Google Sheets parses it as a date (USER_ENTERED)."""
     return dt.strftime("%d/%m/%Y %H:%M")
@@ -65,12 +87,18 @@ class GoogleContestTracker:
             raise TrackerUpdateError(
                 "GOOGLE_SHEET_ID is not set. Add it to .env."
             )
-        if not creds_path:
-            raise TrackerUpdateError(
-                "GOOGLE_SERVICE_ACCOUNT_JSON is not set. Add it to .env."
-            )
+        # Prefer credentials built from the b64 env var (no filesystem dependency).
+        # Fall back to the local service-account JSON file for local dev.
+        creds = _build_credentials()
+        if creds is None:
+            if not creds_path or not Path(creds_path).exists():
+                raise TrackerUpdateError(
+                    "Google service-account credentials not found. "
+                    "Set GOOGLE_CREDS_B64 in Streamlit secrets, or place "
+                    "data/service_account.json locally."
+                )
+            creds = Credentials.from_service_account_file(creds_path, scopes=_SCOPES)
         sheet_name = GOOGLE_SHEET_NAMES.get(program.lower(), GOOGLE_SHEET_NAME)
-        creds = Credentials.from_service_account_file(creds_path, scopes=_SCOPES)
         client = gspread.authorize(creds)
         sh = client.open_by_key(sheet_id)
         self._ws = sh.worksheet(sheet_name)

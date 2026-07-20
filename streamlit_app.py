@@ -231,6 +231,7 @@ _STEP_KEYS = list(_STEPS.keys())
 _ERROR_HINTS: dict[str, str] = {
     "LibraryNotFoundError":  "Module not found in the library Excel — add it to the sheet or pick a Library Override.",
     "AmbiguousLibraryError": "Module maps to multiple libraries — use the Library Override field to pick one.",
+    "session limit":         "Scaler's 2-session limit was hit. Log out an old session at scaler.com (or close a browser tab), then retry.",
     "session expired":       "Scaler session expired. Run `python capture_login.py` locally to refresh auth, then upload the new storage_state.json via the panel below.",
     "BrowserStepError":      "Browser automation failed. Scaler session may have expired — run `python capture_login.py` to refresh it.",
     "DuplicateContestError": "A contest with this batch name already exists in the tracker.",
@@ -321,14 +322,23 @@ def _bootstrap_cloud_config() -> None:
         except Exception:
             pass
 
-    # Service account JSON from base64 secret.
+    # Service-account credentials from base64 secret.
+    # GOOGLE_CREDS_B64 is the canonical name; SERVICE_ACCOUNT_B64 is the legacy alias.
+    # We inject GOOGLE_CREDS_B64 into env so GoogleContestTracker._build_credentials()
+    # can decode it directly — no filesystem write required on Community Cloud.
     svc_b64: str = ""
-    try:
-        svc_b64 = str(st.secrets.get("SERVICE_ACCOUNT_B64", "") or "")
-    except Exception:
-        pass
-    svc_b64 = svc_b64 or os.getenv("SERVICE_ACCOUNT_B64", "")
+    for _creds_key in ("GOOGLE_CREDS_B64", "SERVICE_ACCOUNT_B64"):
+        try:
+            svc_b64 = str(st.secrets.get(_creds_key, "") or "")
+        except Exception:
+            pass
+        svc_b64 = svc_b64 or os.getenv(_creds_key, "")
+        if svc_b64:
+            break
     if svc_b64:
+        os.environ.setdefault("GOOGLE_CREDS_B64", svc_b64)
+        # Also write the local file so code that still uses from_service_account_file
+        # (e.g. any direct local usage) continues to work.
         svc_path = DATA_DIR / "service_account.json"
         if not svc_path.exists():
             try:
