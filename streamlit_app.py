@@ -526,8 +526,17 @@ def _verify_auth_cookie(token: str) -> Optional[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Cached loaders
 # ─────────────────────────────────────────────────────────────────────────────
+def _wb_mtime() -> float:
+    """Return library workbook mtime so cache busts when the file changes."""
+    try:
+        from config import LIBRARY_WORKBOOK
+        return LIBRARY_WORKBOOK.stat().st_mtime
+    except Exception:
+        return 0.0
+
+
 @st.cache_data
-def _load_library_names() -> list[str]:
+def _load_library_names(_mtime: float = 0.0) -> list[str]:
     try:
         return LibraryReader().all_library_names()
     except Exception:
@@ -535,7 +544,7 @@ def _load_library_names() -> list[str]:
 
 
 @st.cache_data
-def _load_module_names(prog: str) -> list[str]:
+def _load_module_names(prog: str, _mtime: float = 0.0) -> list[str]:
     try:
         return LibraryReader().all_module_names(prog)
     except Exception:
@@ -554,21 +563,21 @@ def _suggest_name(mod: str, prog: str) -> str:
 
 
 @st.cache_data
-def _resolve_library_preview(module: str, program: str, override: Optional[str]) -> tuple[str, Optional[str]]:
-    """Returns (resolved_name, error_or_None) without raising."""
+def _resolve_library_preview(module: str, program: str, override: Optional[str]) -> tuple[str, Optional[str], int]:
+    """Returns (resolved_name, error_or_None, num_attempts) without raising."""
     if override:
-        return override, None
+        return override, None, 4  # override bypasses Excel; default to 4
     if not module:
-        return "NV Contests (default)", None
+        return "NV Contests (default)", None, 4
     try:
         match = LibraryReader().resolve(program, module)
-        return match.library_name, None
+        return match.library_name, None, match.num_attempts
     except LibraryNotFoundError:
-        return "NV Contests (default — module not in Excel)", None
+        return "NV Contests (default — module not in Excel)", None, 4
     except AmbiguousLibraryError as exc:
-        return "", str(exc)
+        return "", str(exc), 4
     except Exception:
-        return "NV Contests (default)", None
+        return "NV Contests (default)", None, 4
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -748,7 +757,8 @@ with tab_create:
 
     # ── PREVIEW / CONFIRM ────────────────────────────────────────────────────
     if pending:
-        windows = derive_attempt_windows_by_count(pending["start_dt"], num_attempts=4)
+        _num_attempts = pending.get("num_attempts", 4)
+        windows = derive_attempt_windows_by_count(pending["start_dt"], num_attempts=_num_attempts)
 
         st.markdown('<div class="section-badge">Review Plan</div>', unsafe_allow_html=True)
         st.markdown('<div class="scaler-card"><div class="scaler-card-title">What will be created</div>',
@@ -761,6 +771,7 @@ with tab_create:
                 ("Module",       pending["module"]),
                 ("Program",      pending["program"].upper()),
                 ("Library",      pending["library_resolved"]),
+                ("Attempts",     f"{_num_attempts} planned (actual set by CCT)"),
                 ("Start",        pending["start_dt"].strftime("%d %b %Y, %I:%M %p")),
             ]
             html_rows = "".join(
@@ -780,12 +791,6 @@ with tab_create:
                 "End":      w.end.strftime("%d %b %Y"),
                 "Days":     str((w.end - w.start).days),
             } for w in windows])
-            st.markdown(
-                '<p style="font-size:11px;color:#94A3B8;margin-top:-8px;">'
-                '* Actual attempts depend on the CCT library — may be fewer than shown.'
-                '</p>',
-                unsafe_allow_html=True,
-            )
 
         if pending.get("duplicate_warning"):
             st.warning(f"⚠️ A contest named **{pending['contest_name']}** already exists in history — it will be overwritten.")
@@ -866,7 +871,7 @@ with tab_create:
             # Mark first step as running
             _mark_running("library")
 
-            with st.spinner("Running automation — this takes 2–4 minutes…"):
+            with st.spinner("Running automation — this takes ~1 minute…"):
                 try:
                     outcome = create_contest(
                         module=pending["module"],
@@ -939,7 +944,7 @@ with tab_create:
                 key="form_program",
             )
         with r1c2:
-            module_options = _load_module_names(program)
+            module_options = _load_module_names(program, _mtime=_wb_mtime())
             module = st.selectbox(
                 "Module Name",
                 options=module_options,
@@ -975,7 +980,7 @@ with tab_create:
                 )
                 start_time_val = time(21, 0) if time_choice == "9:00 PM" else time(7, 0)
             with fc2:
-                lib_options = [_DEFAULT_LIB] + _load_library_names()
+                lib_options = [_DEFAULT_LIB] + _load_library_names(_mtime=_wb_mtime())
                 library_sel = st.selectbox("Library Override (optional)", options=lib_options)
                 library_override = None if library_sel == _DEFAULT_LIB else library_sel
 
@@ -1014,7 +1019,7 @@ with tab_create:
                     "is in the past — pick a future date."
                 )
 
-            lib_resolved, lib_err = _resolve_library_preview(
+            lib_resolved, lib_err, lib_attempts = _resolve_library_preview(
                 module or "", program, library_override
             )
             if lib_err:
@@ -1041,6 +1046,7 @@ with tab_create:
                     "library_override":  library_override,
                     "library_resolved":  lib_resolved or library_override or "NV Contests (default)",
                     "start_dt":          start_dt,
+                    "num_attempts":      lib_attempts,
                     "duplicate_warning": bool(
                         not errors and module and contest_name
                         and MetadataStore().batch_exists(program, contest_name)
