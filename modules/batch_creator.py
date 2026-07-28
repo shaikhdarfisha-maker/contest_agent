@@ -71,10 +71,9 @@ class BatchCreator:
             )
             return BatchResult(batch_name=batch_name, batch_id=existing_id or None)
 
-        # Batch doesn't exist — reload and filter by template keyword to clone.
-        self.page.goto(URLS["admin_batches"])
-        self._assert_on_batches_page()
-        self.page.wait_for_selector(_FILTER_BTN_SEL)
+        # Batch doesn't exist — clear the current name filter and apply the
+        # template keyword filter without a full page reload.
+        self._clear_name_filter()
         try:
             self.page.locator(
                 "th:nth-child(2) > .data-table__header-item > "
@@ -95,8 +94,8 @@ class BatchCreator:
         try:
             template = BATCH_CLONE_TEMPLATE_NAME
             if template:
-                row = self.page.locator("tr").filter(has_text=template)
-                row.get_by_text("Clone").click()
+                row = self.page.locator("tr").filter(has_text=template).first
+                row.get_by_text("Clone").first.click()
             else:
                 self.page.get_by_text("Clone").first.click()
 
@@ -157,6 +156,20 @@ class BatchCreator:
                 f"Redirected away from admin page (now at {self.page.url!r}) — "
                 "Scaler session expired. Run: python3 capture_login.py, then restart ./start.sh"
             )
+
+    def _clear_name_filter(self) -> None:
+        """Clear the name-column filter so all batches are visible again."""
+        try:
+            filter_form = self.page.locator("form").filter(has_text="KeywordClearApply")
+            if filter_form.count() == 0:
+                return
+            self.page.get_by_role("button", name="Clear").click()
+            filter_form.wait_for(state="hidden", timeout=5000)
+        except Exception:  # noqa: BLE001
+            # If clear fails, fall back to a fresh page load.
+            self.page.goto(URLS["admin_batches"])
+            self._assert_on_batches_page()
+            self.page.wait_for_selector(_FILTER_BTN_SEL)
 
     def _find_existing_batch(self, batch_name: str) -> Optional[str]:
         """Filter the batches table for batch_name; return its id if found, else None."""
