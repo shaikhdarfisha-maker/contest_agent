@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Run this on a Mac that already has a working setup, BEFORE moving to a new machine.
-# Zips the 4 private files (never committed to git) into one file so it can be
-# AirDropped as a single visible item instead of hunting for hidden dotfiles.
+# Zips the private files (never committed to git) plus the contest history
+# database into one file so it can be AirDropped as a single visible item
+# instead of hunting for hidden dotfiles — and so duplicate-detection history
+# isn't silently lost on migration.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -10,6 +12,7 @@ FILES=(
   ".streamlit/secrets.toml"
   "data/storage_state.json"
   "data/service_account.json"
+  "data/contest_agent.sqlite3"
 )
 
 MISSING=()
@@ -32,8 +35,9 @@ zip secrets_bundle.zip "${PRESENT[@]}"
 
 echo ""
 echo "Done. Created: secrets_bundle.zip"
-echo "AirDrop just this ONE file to the new Mac, then on that Mac run:"
-echo "  ./setup_new_machine.sh"
+echo "AirDrop just this ONE file into the new Mac's Downloads folder, then on"
+echo "that Mac open Terminal and paste:"
+echo "  curl -fsSL https://raw.githubusercontent.com/shaikhdarfisha-maker/contest_agent/main/bootstrap.sh | bash"
 echo ""
 if [ ${#MISSING[@]} -gt 0 ]; then
   echo "Note: these files were not found and were skipped:"

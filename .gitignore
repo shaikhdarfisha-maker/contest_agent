@@ -12,6 +12,7 @@ data/run.lock
 data/service_account.json
 data/service_account.b64
 secrets_bundle.zip
+data/db_merge_backup/
 data/NV_contests_Tracker_Q2-2026_.xlsx
 data/api_probe_log.json
 logs/*.log

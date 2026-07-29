@@ -33,25 +33,27 @@ python3 -m streamlit run streamlit_app.py --server.port 8501 --server.headless t
 
 ## New machine setup (one-time)
 
+Repo is public — no GitHub login/token needed to clone it.
+
+**On the Mac that already works**, bundle the 4 gitignored secret files into one AirDrop-friendly file:
 ```bash
-brew install python@3.11 ngrok
-git clone https://<TOKEN>@github.com/shaikhdarfisha-maker/contest_agent.git ~/Downloads/contest_agent
+./bundle_secrets.sh   # creates secrets_bundle.zip
+```
+AirDrop that one file into the new Mac's Downloads folder.
+
+**On the new Mac**, open Terminal and paste:
+```bash
+curl -fsSL https://raw.githubusercontent.com/shaikhdarfisha-maker/contest_agent/main/bootstrap.sh | bash
+```
+This installs Homebrew/python/ngrok/git if missing, clones the repo, installs Python deps + Playwright Chromium, unpacks the secrets bundle, and configures ngrok (it'll prompt for the authtoken from dashboard.ngrok.com).
+
+Then refresh the Scaler session (always required — sessions don't transfer machine to machine):
+```bash
 cd ~/Downloads/contest_agent
-pip3 install -r requirements.txt
-playwright install chromium
-ngrok config add-authtoken <NGROK_TOKEN>   # from dashboard.ngrok.com
+python3.11 capture_login.py   # opens browser, log in manually
 ```
 
-Transfer these files from old Mac (gitignored, never committed):
-- `data/storage_state.json` — Scaler browser session
-- `data/service_account.json` — Google Sheets service account key
-- `.env` — local env vars
-- `.streamlit/secrets.toml` — Streamlit secrets
-
-Then refresh the Scaler session:
-```bash
-python3 capture_login.py   # opens browser, log in manually
-```
+**Gotcha (bit us during a migration):** `data/contest_agent.sqlite3` is the only record of `batch_exists()`/duplicate-detection history (`modules/metadata_store.py`) and is gitignored — it does NOT come from `git clone`. `bundle_secrets.sh` now includes it in the zip, but if a new machine ever ends up with its own fresh (near-empty) db from having run the app before the real history arrived, don't just overwrite — check row counts on both (`sqlite3 data/contest_agent.sqlite3 "SELECT COUNT(*) FROM contests"`) and merge the newer machine's rows into the fuller history before replacing the file, or duplicate-detection silently loses weeks of memory.
 
 Prevent Mac sleep (so the app stays up during work hours):
 ```bash
