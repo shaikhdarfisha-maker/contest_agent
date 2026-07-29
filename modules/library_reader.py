@@ -41,6 +41,10 @@ class LibraryMatch:
     library_link: Optional[str]
     library_id: Optional[str]
     num_attempts: int = 4  # per-module attempt count (from "Num Attempts" column)
+    skill_eval_label: Optional[str] = None  # override for the Mandatory Skill
+    # Evaluation checkbox match, when the module name doesn't textually match
+    # the checkbox label Scaler shows (e.g. module "Linux Shell Scripting and
+    # Computer Systems 2" vs. checkbox "Linux Certification Contest").
 
 
 def _norm(text: object) -> str:
@@ -78,6 +82,7 @@ class LibraryReader:
             "link": _norm(spec.link_col) if spec.link_col else None,
             "status": _norm(spec.status_col) if spec.status_col else None,
             "attempts": _norm(spec.attempts_col) if spec.attempts_col else None,
+            "skill_eval": _norm(spec.skill_eval_col) if spec.skill_eval_col else None,
         }
         for col_i, cell in enumerate(header):
             cell_norm = _norm(cell)
@@ -120,6 +125,10 @@ class LibraryReader:
                 _num_attempts = int(_attempts_raw) if _attempts_raw is not None and str(_attempts_raw).strip() else 4
             except (ValueError, TypeError):
                 _num_attempts = 4
+            _skill_eval_raw = row[idx["skill_eval"]] if "skill_eval" in idx else None
+            _skill_eval_label = (
+                str(_skill_eval_raw).strip() if _skill_eval_raw and str(_skill_eval_raw).strip() else None
+            )
             matches.append(
                 LibraryMatch(
                     module=str(row[idx["module"]]).strip(),
@@ -128,6 +137,7 @@ class LibraryReader:
                     library_link=str(link).strip() if link else None,
                     library_id=_extract_library_id(link),
                     num_attempts=_num_attempts,
+                    skill_eval_label=_skill_eval_label,
                 )
             )
         return matches

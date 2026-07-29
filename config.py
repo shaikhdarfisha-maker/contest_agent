@@ -64,6 +64,7 @@ class SheetSpec:
     link_col: Optional[str]  # header text for the library-link column (if any)
     status_col: Optional[str] = None   # e.g. DevOps "CC" = Live/Old
     attempts_col: Optional[str] = None  # header for per-module attempt count
+    skill_eval_col: Optional[str] = None  # header for a skill-eval checkbox label override
 
 
 PROGRAMS: dict[str, SheetSpec] = {
@@ -80,6 +81,7 @@ PROGRAMS: dict[str, SheetSpec] = {
         library_col="Library Name",
         link_col="Link",
         status_col="CC",
+        skill_eval_col="Skill Eval Label",
     ),
     "dsml": SheetSpec(
         sheet_name="DSML Libraries",

@@ -114,7 +114,7 @@ class ScheduleCreator:
         # fall back to NV Contests (covers modules not yet remapped in Excel).
         _NV = "NV Contests"
         try:
-            self._check_skill_eval_checkbox(preferred_name=library.module)
+            self._check_skill_eval_checkbox(preferred_name=library.skill_eval_label or library.module)
         except Exception as exc:  # noqa: BLE001
             if library.library_name == _NV:
                 raise BrowserStepError(f"Could not tick Mandatory Skill Eval: {exc}")
@@ -125,7 +125,7 @@ class ScheduleCreator:
             try:
                 self._dismiss_modal_backdrop()
                 self._select_library_in_dropdown(_NV)
-                self._check_skill_eval_checkbox(preferred_name=library.module)
+                self._check_skill_eval_checkbox(preferred_name=library.skill_eval_label or library.module)
             except Exception as exc2:  # noqa: BLE001
                 raise BrowserStepError(
                     f"Could not tick Mandatory Skill Eval in '{library.library_name}' "
