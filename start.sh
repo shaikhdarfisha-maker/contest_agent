@@ -12,6 +12,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# ── Auto-update from GitHub (keeps every machine in sync automatically) ─────
+if [[ -d "$SCRIPT_DIR/.git" ]] && command -v git &>/dev/null; then
+    echo "Checking for updates..."
+    if git pull --ff-only --quiet 2>/dev/null; then
+        echo "  Up to date."
+    else
+        echo "  Could not auto-update (offline, or local edits present) — continuing with current version."
+    fi
+fi
+
 # ── Load .env ────────────────────────────────────────────────────────────────
 if [[ -f .env ]]; then
     set -a
