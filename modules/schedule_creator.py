@@ -874,6 +874,11 @@ class ScheduleCreator:
         """
         import re as _re
 
+        # Strip program-suffix tags like "(AIML)" before matching against CCT
+        # class names — the xlsx module name carries these tags for batch naming,
+        # but CCT classes don't include them.
+        preferred_name = _re.sub(r'\s*\([^)]+\)\s*$', '', preferred_name).strip()
+
         want  = _re.compile(r"contest|test|neovarsity", _re.I)
         avoid = _re.compile(r"Discussion", _re.I)
 
