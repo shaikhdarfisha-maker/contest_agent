@@ -1,3 +1,13 @@
+---
+title: NV Contest Agent
+emoji: 🏆
+colorFrom: orange
+colorTo: blue
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 # Neovarsity Contest Creation Agent
 
 An AI operations agent that automates the end-to-end Neovarsity contest

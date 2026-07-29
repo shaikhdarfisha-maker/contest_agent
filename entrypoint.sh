@@ -8,8 +8,10 @@ if [ -n "$STORAGE_STATE_B64" ]; then
 fi
 
 # Decode Google service account credentials from base64 secret
-if [ -n "$GOOGLE_SERVICE_ACCOUNT_B64" ]; then
-    echo "$GOOGLE_SERVICE_ACCOUNT_B64" | base64 -d > /app/data/service_account.json
+# Accept both GOOGLE_CREDS_B64 (canonical) and SERVICE_ACCOUNT_B64 (legacy alias)
+_GCREDS="${GOOGLE_CREDS_B64:-$SERVICE_ACCOUNT_B64}"
+if [ -n "$_GCREDS" ]; then
+    echo "$_GCREDS" | base64 -d > /app/data/service_account.json
     echo "[entrypoint] service_account.json written"
 fi
 
