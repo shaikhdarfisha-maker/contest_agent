@@ -1,18 +1,15 @@
 """
 capture_login.py
 ================
-One-time local helper to refresh the Scaler SSO session and persist it so
-the headless agent can reuse it on subsequent runs (including Community Cloud).
+One-time local helper to refresh the Scaler SSO session.
 
 Run:
     python capture_login.py
 
-A headed Chromium window opens. Complete the Google/corporate SSO login, then
-return to this terminal and press Enter at each prompt.  The session is saved
-to data/storage_state.json and a base64 copy is printed for pasting into the
-STORAGE_STATE_B64 Streamlit secret.
+A Chromium window opens. Log in to Scaler in THAT window. The script
+detects automatically when you reach the admin page and saves the session.
 
-Both files are gitignored — do NOT commit them.
+The file is gitignored — do NOT commit it.
 """
 
 from __future__ import annotations
@@ -29,19 +26,44 @@ log = get_logger("capture_login")
 
 def main() -> None:
     print("\n=== NV Contest Agent — Capture Login ===\n")
-    print("A headed browser will open. Complete the Scaler SSO login,")
-    print("then return here and press Enter at each step.\n")
+    print("A Chromium window will open NOW.")
+    print("Log in to Scaler inside THAT window (not your normal Chrome).")
+    print("The script will detect automatically when you reach the admin page.\n")
 
     with BrowserManager(headless=False) as bm:
-        bm.page.goto(URLS["admin_batches"])
-        print("Step 1 — Log in to Admin V2 (scaler.com/admin).")
-        print("Once the Batches table is visible, press Enter ...")
-        input()
+        bm.page.goto(URLS["admin_batches"], wait_until="domcontentloaded")
 
-        bm.page.goto("https://www.scaler.com/scm/classes/schedule-classes")
-        print("\nStep 2 — Verify CCT access (scaler.com/scm).")
-        print("Once the Schedule Classes page loads, press Enter ...")
-        input()
+        # Step 1: wait silently until admin page is reached (up to 3 minutes).
+        print("Waiting for you to log in and reach the Admin V2 Batches page ...")
+        print("(URL must contain /admin/academy/v2)\n")
+        try:
+            bm.page.wait_for_url(
+                "**/admin/academy/v2**",
+                timeout=180_000,  # 3 minutes
+                wait_until="domcontentloaded",
+            )
+        except Exception:
+            print("\n❌ Timed out (3 min). Please re-run and log in faster.")
+            return
+
+        print(f"✅ Admin V2 detected: {bm.page.url}")
+        print("   Waiting for the Batches table to fully load ...")
+        try:
+            bm.page.wait_for_selector(".data-table__action--filter", timeout=15_000)
+        except Exception:
+            pass  # table may have a different selector — proceed anyway
+
+        # Step 2: verify CCT access.
+        print("\nNavigating to CCT (Schedule Classes) to verify access ...")
+        bm.page.goto(
+            "https://www.scaler.com/scm/classes/schedule-classes",
+            wait_until="domcontentloaded",
+        )
+        try:
+            bm.page.wait_for_url("**/scm/**", timeout=15_000)
+            print(f"✅ CCT detected: {bm.page.url}")
+        except Exception:
+            print(f"⚠️  CCT URL check: {bm.page.url} (proceeding anyway)")
 
         bm.save_auth()
 
@@ -55,13 +77,7 @@ def main() -> None:
     b64_path.write_text(b64)
 
     print(f"\n✅ Auth state saved  → {state_path}")
-    print(f"✅ Base64 copy saved → {b64_path}")
-    print("\n── For Streamlit Community Cloud ─────────────────────────────────────")
-    print("Add this to your app secrets (Settings → Secrets):")
-    print(f'\nSTORAGE_STATE_B64 = "{b64}"')
-    print("\n──────────────────────────────────────────────────────────────────────")
-    print("For a local / server deployment, just keep data/storage_state.json.")
-    print("The file is gitignored — never commit it.\n")
+    print("   Restart ./start.sh to pick up the new session.\n")
 
 
 if __name__ == "__main__":
