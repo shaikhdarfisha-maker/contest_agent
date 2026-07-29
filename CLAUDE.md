@@ -141,6 +141,10 @@ Use `.first` on both the row locator and Clone button: `row.first` + `row.get_by
 **File:** `hire_test.py` → `_dismiss_tour_overlay()`
 Use Playwright click (not JS click) on the close button — JS click skips AngularJS `$scope.$apply()`.
 
+### 13. Skill-eval checkbox label can diverge from module name
+**Files:** `config.py` (`SheetSpec.skill_eval_col`), `library_reader.py` (`LibraryMatch.skill_eval_label`), `schedule_creator.py` → skill-eval checkbox block
+Shared libraries like NV Contests (338) hold many unrelated contest sessions. `_check_skill_eval_checkbox` matches by module name by default, which breaks when Scaler's checkbox label shares no words with the module (e.g. module "Linux Shell Scripting and Computer Systems 2" vs. checkbox "Linux Certification Contest") — it would silently tick the wrong contest instead of erroring. Fix: add an optional "Skill Eval Label" column per-sheet in the workbook; when set, it overrides the match target instead of the module name. Check this whenever a module is remapped to a shared/generic library — verify in Scaler's Schedule Classes flow (not the Edit Library admin page, which lists sessions but isn't the live checkbox screen) what the checkbox is actually labeled before assuming module-name matching will work.
+
 ---
 
 ## Fragile areas — check first when things break
