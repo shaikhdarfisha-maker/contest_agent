@@ -40,6 +40,7 @@ class LibraryMatch:
     library_name: str
     library_link: Optional[str]
     library_id: Optional[str]
+    num_attempts: int = 4  # per-module attempt count (from "Num Attempts" column)
 
 
 def _norm(text: object) -> str:
@@ -76,6 +77,7 @@ class LibraryReader:
             "library": _norm(spec.library_col),
             "link": _norm(spec.link_col) if spec.link_col else None,
             "status": _norm(spec.status_col) if spec.status_col else None,
+            "attempts": _norm(spec.attempts_col) if spec.attempts_col else None,
         }
         for col_i, cell in enumerate(header):
             cell_norm = _norm(cell)
@@ -113,6 +115,11 @@ class LibraryReader:
             if _norm(row[idx["module"]]) != target:
                 continue
             link = row[idx["link"]] if "link" in idx else None
+            _attempts_raw = row[idx["attempts"]] if "attempts" in idx else None
+            try:
+                _num_attempts = int(_attempts_raw) if _attempts_raw is not None and str(_attempts_raw).strip() else 4
+            except (ValueError, TypeError):
+                _num_attempts = 4
             matches.append(
                 LibraryMatch(
                     module=str(row[idx["module"]]).strip(),
@@ -120,6 +127,7 @@ class LibraryReader:
                     library_name=str(row[idx["library"]]).strip(),
                     library_link=str(link).strip() if link else None,
                     library_id=_extract_library_id(link),
+                    num_attempts=_num_attempts,
                 )
             )
         return matches
@@ -144,28 +152,25 @@ class LibraryReader:
             log.info("Library resolved: %s -> %s", module, matches[0].library_name)
             return matches[0]
 
-        # Multiple candidates: try to prefer a non-deprecated / live one.
+        # Multiple candidates: filter to non-deprecated first, then take the
+        # first row. Row order in the workbook IS the priority order — the
+        # preferred library (e.g. NV Contests) is always prepended first.
         if prefer_live:
             live = [
                 m
                 for m in matches
                 if not any(tok in _norm(m.library_name) for tok in _DEPRECATED_TOKENS)
             ]
-            if len(live) == 1:
-                log.info(
-                    "Library resolved (live-preferred): %s -> %s",
-                    module,
-                    live[0].library_name,
-                )
-                return live[0]
             if live:
-                matches = live  # narrow, but still ambiguous
+                matches = live
 
-        raise AmbiguousLibraryError(
-            f"Module '{module}' in program '{program}' maps to multiple libraries: "
-            + "; ".join(m.library_name for m in matches)
-            + ". Disambiguate by passing an explicit library_name."
+        log.info(
+            "Library resolved (first of %d): %s -> %s",
+            len(matches),
+            module,
+            matches[0].library_name,
         )
+        return matches[0]
 
     def resolve_by_name_only(self, program: str, library_name: str) -> LibraryMatch:
         """Find any row in the program sheet whose library name matches, ignoring module."""

@@ -204,9 +204,18 @@ class BrowserManager:
     ) -> None:
         if exc is not None:
             self.capture_error("unhandled_exception")
+            # Save refreshed tokens even on failure so the next run doesn't
+            # start with stale cookies (Scaler rotates _scaler_session on each
+            # page load). Skip only when the session itself expired — in that
+            # case the current browser state (sign_in page) would overwrite
+            # good tokens.
+            from modules.utils import SessionExpiredError  # lazy, avoids circular
+            if not isinstance(exc, SessionExpiredError):
+                try:
+                    self.save_auth()
+                except Exception:
+                    pass
         else:
-            # Persist any cookies refreshed during the run (e.g. after session-limit
-            # recovery) so the next run doesn't have to re-authenticate.
             try:
                 self.save_auth()
             except Exception:
@@ -228,15 +237,76 @@ class BrowserManager:
         return self._page
 
     def new_hire_page(self, test_id: str) -> Page:
-        """Open a fresh page at a Hire Test's basic-settings, return it."""
-        from config import URLS
-
+        """Open a fresh page at a Hire Test and wait until interactive."""
         if self._context is None:
             raise RuntimeError("BrowserManager used outside its context.")
         page = self._context.new_page()
-        page.goto(f"{URLS['hire_test_base']}/{test_id}/#/basic-settings")
-        page.wait_for_load_state("networkidle")
+        self._goto_hire_page(page, test_id)
         return page
+
+    def reuse_hire_page(self, page: Page, test_id: str) -> None:
+        """Navigate an existing Hire Test page to a different test id."""
+        self._goto_hire_page(page, test_id)
+
+    def _goto_hire_page(self, page: Page, test_id: str) -> None:
+        """
+        Navigate to a Hire Test basic-settings page and wait for the
+        'Test Settings' tab link to be attached (first element we click).
+        Uses domcontentloaded instead of networkidle — saves ~5-8s per page.
+
+        Also intercepts GET requests during page load to discover the real
+        hire-test API base URL (so subsequent PATCH fast-path calls work).
+        """
+        import re as _re
+        from config import URLS
+        from modules.hire_test import HireTest
+
+        _found: dict = {}
+
+        def _sniff(route, request):  # noqa: E306
+            try:
+                url = request.url
+                # Only consider XHR/API calls (must contain "api" in path).
+                # The page navigation itself (https://.../hire/test/{id}/)
+                # also contains the test_id but is not an API endpoint.
+                if (
+                    request.method == "GET"
+                    and test_id in url
+                    and "/api/" in url.lower()
+                    and not _found
+                ):
+                    m = _re.match(
+                        r"(https://[^/]+(?:/[^/?#]+)*)/" + _re.escape(test_id),
+                        url,
+                    )
+                    if m:
+                        _found["base"] = m.group(1)
+                        log.info("Hire Test API base sniffed: %s (from %s)", m.group(1), url)
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                try:
+                    route.continue_()
+                except Exception:  # noqa: BLE001
+                    pass
+
+        page.route("**/hire/**", _sniff)
+        try:
+            page.goto(
+                f"{URLS['hire_test_base']}/{test_id}/#/basic-settings",
+                wait_until="domcontentloaded",
+            )
+        finally:
+            page.unroute("**/hire/**", _sniff)
+
+        if _found.get("base") and not HireTest._api_endpoint:
+            HireTest._api_endpoint = _found["base"]
+            log.info("Hire Test API base discovered from GET: %s", _found["base"])
+
+        try:
+            page.wait_for_selector("a:has-text('Test Settings')", timeout=20_000)
+        except Exception:  # noqa: BLE001
+            pass  # update_window handles missing elements gracefully
 
     def save_auth(self) -> None:
         """Persist cookies/localStorage so subsequent runs skip the login."""

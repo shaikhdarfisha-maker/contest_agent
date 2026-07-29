@@ -17,6 +17,7 @@ import sys
 from datetime import datetime
 
 from config import build_contest_name, FALLBACK_LIBRARY_NAME
+from modules.google_tracker import _fmt as _gfmt
 from modules.library_reader import LibraryReader
 from modules.orchestrator import create_contest
 from modules.tracker import ContestTracker
@@ -120,6 +121,29 @@ def main() -> int:
         check("duplicate raises", False)
     except DuplicateContestError:
         check("duplicate raises", True)
+
+    print("Google Sheets date formatting (_fmt)")
+    # Day > 12: old DD/MM format would produce '30/07/2026 21:00', which a
+    # US-locale sheet cannot parse as a date (month=30 is invalid).
+    day_gt_12 = datetime(2026, 7, 30, 21, 0)
+    check(
+        "day>12 formats as ISO (not DD/MM)",
+        _gfmt(day_gt_12) == "2026-07-30 21:00:00",
+    )
+    # Day ≤ 12: ambiguous in DD/MM vs MM/DD — ISO makes it unambiguous.
+    day_le_12 = datetime(2026, 8, 8, 0, 0)
+    check(
+        "day≤12 formats as ISO (not ambiguous)",
+        _gfmt(day_le_12) == "2026-08-08 00:00:00",
+    )
+    # Midnight — seconds must be included so Sheets sees a full timestamp.
+    midnight = datetime(2026, 6, 4, 0, 0, 0)
+    check("midnight includes seconds field", _gfmt(midnight) == "2026-06-04 00:00:00")
+    # Confirm no DD/MM or MM/DD slash pattern leaks into the output.
+    check(
+        "output starts with 4-digit year",
+        all(_gfmt(datetime(2026, m, d, 9, 0)).startswith("2026-") for m in range(1, 13) for d in [1, 15, 28]),
+    )
 
     print()
     if failures:

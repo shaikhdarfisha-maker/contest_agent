@@ -62,7 +62,8 @@ class SheetSpec:
     module_col: str          # header text for the module column
     library_col: str         # header text for the library-name column
     link_col: Optional[str]  # header text for the library-link column (if any)
-    status_col: Optional[str] = None  # e.g. DevOps "CC" = Live/Old
+    status_col: Optional[str] = None   # e.g. DevOps "CC" = Live/Old
+    attempts_col: Optional[str] = None  # header for per-module attempt count
 
 
 PROGRAMS: dict[str, SheetSpec] = {
@@ -71,6 +72,7 @@ PROGRAMS: dict[str, SheetSpec] = {
         module_col="module_name",
         library_col="library name",
         link_col="Library Link",
+        attempts_col="Num Attempts",
     ),
     "devops": SheetSpec(
         sheet_name="DevOps Libraries",
@@ -337,6 +339,18 @@ def schedule_slot_for_today(today=None) -> tuple[str, str]:
     if d.weekday() in (0, 2, 4):  # Mon, Wed, Fri
         return SCHEDULE_SLOT_MWF, SCHEDULE_SLOT_SEARCH_MWF
     return SCHEDULE_SLOT_TTHS, SCHEDULE_SLOT_SEARCH_TTHS
+
+
+# --------------------------------------------------------------------------- #
+# API migration feature flags
+# --------------------------------------------------------------------------- #
+# When true (default), the agent tries the direct HTTP API first for these
+# steps and automatically falls back to Playwright if the API call fails.
+# Set to "false" in .env to force Playwright-only behaviour.
+# Run scripts/api_probe.py --interactive after capture_login.py to capture
+# the exact API endpoints, then update SCALER_CCT_API / SCALER_HIRE_API if needed.
+USE_API_SCHEDULING = os.getenv("USE_API_SCHEDULING", "true").lower() == "true"
+USE_API_HIRETEST   = os.getenv("USE_API_HIRETEST",   "true").lower() == "true"
 
 
 def next_slot_datetime(now=None):

@@ -98,8 +98,14 @@ def _build_credentials() -> Optional[Credentials]:
 
 
 def _fmt(dt: datetime) -> str:
-    """Format a datetime so Google Sheets parses it as a date (USER_ENTERED)."""
-    return dt.strftime("%d/%m/%Y %H:%M")
+    """
+    Format a datetime for Google Sheets USER_ENTERED writes.
+
+    ISO 8601 (YYYY-MM-DD HH:MM:SS) is unambiguous regardless of the
+    spreadsheet locale.  The previous DD/MM/YYYY format failed whenever
+    day > 12 because US-locale sheets tried to parse the day as a month.
+    """
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 class GoogleContestTracker:
@@ -139,27 +145,44 @@ class GoogleContestTracker:
     def _all_rows(self) -> list[list[str]]:
         return self._ws.get_all_values()
 
-    def _find_row(self, batch_name: str) -> Optional[int]:
-        """Return 1-based row index of an existing batch, or None."""
+    def _find_module_row(self, module: str) -> Optional[int]:
+        """
+        Return 1-based row index of the existing module row (col A), or None.
+
+        Match is exact, case-insensitive, whitespace-trimmed.  Search starts at
+        _first_data_row to skip banner / header rows.  If multiple rows share the
+        same module name (existing duplicates), returns the FIRST match and logs a
+        warning listing every duplicate row number.
+        """
         rows = self._all_rows()
-        bat_col = self._cols["batch_name"] - 1  # 0-based
-        target = batch_name.strip().lower()
+        mod_col = self._cols.get("module", 1) - 1  # 0-based; col A = 0
+        target = module.strip().lower()
+        matches: list[int] = []
+
         for i, row in enumerate(
             rows[self._first_data_row - 1 :], start=self._first_data_row
         ):
-            if len(row) <= bat_col:
+            if len(row) <= mod_col:
                 continue
-            if row[bat_col].strip().lower() == target:
-                return i
-        return None
+            if row[mod_col].strip().lower() == target:
+                matches.append(i)
+
+        if not matches:
+            return None
+        if len(matches) > 1:
+            log.warning(
+                "Module %r matched %d rows: %s — updating first match (row %d) only",
+                module, len(matches), matches, matches[0],
+            )
+        return matches[0]
 
     def _first_empty_row(self) -> int:
         """Return the 1-based index of the first empty row below existing data."""
         rows = self._all_rows()
-        # Use batch_name column as the anchor — present in every program layout.
-        check_col = self._cols["batch_name"] - 1
+        # Use module column (col A) as the anchor — always a plain value, never a formula.
+        mod_col = self._cols.get("module", 1) - 1
         for i in range(self._first_data_row - 1, len(rows)):
-            if len(rows[i]) <= check_col or not rows[i][check_col].strip():
+            if len(rows[i]) <= mod_col or not rows[i][mod_col].strip():
                 return i + 1  # convert to 1-based
         return len(rows) + 1  # append after last row
 
@@ -171,29 +194,40 @@ class GoogleContestTracker:
         batch_name: str,
         windows: list[AttemptWindow],
         dry_run: bool = False,
-        overwrite: bool = False,
+        overwrite: bool = False,  # retained for API compat; upsert is always the behaviour
     ) -> int:
         """
-        Write one contest row. Returns the 1-based row index written.
+        Upsert one contest row, keyed on Module Name (col A).
 
-        Only the manual columns are written; formula columns (K-N) are untouched.
-        Attempt windows beyond the list are left blank.
+        UPDATE path (module found in col A):
+          Overwrites Batch Name (col B) and the 8 attempt date columns (C-J) in
+          place.  Formula columns K-N (No. of Attempts, Deadline, Days Remaining,
+          Status) are NOT touched — they keep computing from the dates we write.
+
+        APPEND path (module not found):
+          Writes a new row: Module Name + Batch Name + dates.  Formula columns K-N
+          are left blank; Google Sheets does NOT auto-copy formulas to appended rows,
+          so they must be manually dragged down after the first append for a new
+          module, or the sheet can use array formulas to cover the whole column.
+
+        Returns the 1-based row index written.
         """
         if not windows:
             raise TrackerUpdateError("At least the main contest window is required.")
 
-        existing_row = self._find_row(batch_name)
-        if existing_row is not None and not overwrite:
-            raise DuplicateContestError(
-                f"A row for batch '{batch_name}' already exists in the Google Sheet."
-            )
+        existing_row = self._find_module_row(module)
+        is_update = existing_row is not None
+        row = existing_row if is_update else self._first_empty_row()
 
-        row = existing_row or self._first_empty_row()
-
-        # Build (row, col, value) triples for all manual cells.
+        # Build cells — only manual columns; formula columns (K-N) are never written.
         cells: list[gspread.Cell] = []
-        if "module" in self._cols:
-            cells.append(gspread.Cell(row, self._cols["module"], module))
+
+        if not is_update:
+            # New row: write the module name so col A is populated.
+            if "module" in self._cols:
+                cells.append(gspread.Cell(row, self._cols["module"], module))
+
+        # Always write batch name and all attempt date columns.
         cells.append(gspread.Cell(row, self._cols["batch_name"], batch_name))
 
         attempt_col_keys = [
@@ -205,16 +239,92 @@ class GoogleContestTracker:
         for win, (sk, ek) in zip(windows, attempt_col_keys):
             cells.append(gspread.Cell(row, self._cols[sk], _fmt(win.start)))
             cells.append(gspread.Cell(row, self._cols[ek], _fmt(win.end)))
+        # Clear attempt columns beyond those being written so stale dates from a
+        # previous 4-attempt row do not persist when a module has fewer attempts.
+        for sk, ek in attempt_col_keys[len(windows):]:
+            if sk in self._cols:
+                cells.append(gspread.Cell(row, self._cols[sk], ""))
+            if ek in self._cols:
+                cells.append(gspread.Cell(row, self._cols[ek], ""))
 
         if dry_run:
-            log.info("[dry-run] Would write '%s' at row %d in Google Sheet", batch_name, row)
+            action = "update" if is_update else "append"
+            log.info(
+                "[dry-run] Would %s module %r at row %d in Google Sheet", action, module, row
+            )
             return row
 
         # USER_ENTERED lets Sheets parse the date strings as real dates.
         self._ws.update_cells(cells, value_input_option="USER_ENTERED")
-        action = "Updated" if existing_row else "Appended"
-        log.info("%s '%s' at row %d in Google Sheet", action, batch_name, row)
+
+        if is_update:
+            log.info(
+                "Updated row %d (module=%r, batch=%r) in Google Sheet", row, module, batch_name
+            )
+        else:
+            log.info(
+                "Appended row %d (module=%r, batch=%r) in Google Sheet", row, module, batch_name
+            )
+            log.info(
+                "NOTE: formula columns K-N are blank on new rows — "
+                "drag formulas down from an existing row if needed."
+            )
+
         return row
+
+    # ------------------------------------------------------------------ #
+    def verify_row(
+        self,
+        row_num: int,
+        *,
+        module: str,
+        batch_name: str,
+        windows: list[AttemptWindow],
+    ) -> tuple[bool, str]:
+        """
+        Read back the row at row_num and verify the key fields match what was written.
+        Returns (verified: bool, detail_message: str).
+        Called by the orchestrator after append_contest() to confirm the write landed.
+        """
+        try:
+            vals = self._ws.row_values(row_num)
+        except Exception as exc:  # noqa: BLE001
+            return False, f"Could not read back row {row_num}: {exc}"
+
+        def cell(col_name: str) -> str:
+            idx = self._cols.get(col_name, 0) - 1  # 0-based
+            return vals[idx].strip() if len(vals) > idx >= 0 else ""
+
+        # Batch name (col B) must match exactly (case-insensitive)
+        written_batch = cell("batch_name")
+        if written_batch.lower() != batch_name.strip().lower():
+            return False, (
+                f"Row {row_num} batch name mismatch: "
+                f"wrote '{batch_name}' but read back '{written_batch}'"
+            )
+
+        # A1 start (col C) must be non-empty
+        a1_start = cell("a1_start")
+        if not a1_start:
+            return False, f"Row {row_num}: A1 start date is empty after write"
+
+        # Module column, if present
+        if "module" in self._cols:
+            written_mod = cell("module")
+            if written_mod and written_mod.lower() != module.strip().lower():
+                return False, (
+                    f"Row {row_num} module mismatch: "
+                    f"wrote '{module}' but read back '{written_mod}'"
+                )
+
+        date_keys = ["a1_start","a1_end","a2_start","a2_end",
+                     "a3_start","a3_end","a4_start","a4_end"]
+        n_dates = sum(1 for k in date_keys if cell(k))
+
+        return True, (
+            f"Row {row_num}: batch='{written_batch}', "
+            f"a1_start='{a1_start}', {n_dates}/8 date cells populated"
+        )
 
     # ------------------------------------------------------------------ #
     def suggest_next_name(self, module: str) -> str:
