@@ -444,7 +444,18 @@ class ContestOrchestrator:
             emit("batch", f"Creating batch '{batch_name}' in Admin V2")
             batch = BatchCreator(page).create_batch(batch_name)
         if contest_db_id is not None:
-            self.store.update_contest(contest_db_id, batch_id=batch.batch_id)
+            # Mark the batch step itself as confirmed done as soon as it
+            # actually is — status="failed" from a later step (CCT/hire
+            # test/tracker) then correctly implies "batch exists, safe to
+            # skip on retry". Without this, any failure anywhere in the run
+            # got the blanket status="failed" below, even when the batch was
+            # never created, poisoning every future retry into skipping
+            # Admin V2 forever (they'd search CCT for a batch that doesn't
+            # exist and time out the same way).
+            update_fields: dict = {"status": "batch_created"}
+            if batch.batch_id is not None:
+                update_fields["batch_id"] = batch.batch_id
+            self.store.update_contest(contest_db_id, **update_fields)
         emit("batch", f"Batch created (id={batch.batch_id})")
 
         # Initialise API client once (used for steps 5 + 6 when flags are set).

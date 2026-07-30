@@ -97,16 +97,16 @@ class MetadataStore:
     def batch_was_previously_created(self, program: str, batch_name: str) -> bool:
         """True if a prior run completed the batch step.
 
-        Checks for status 'created' or 'failed' — either means the run
-        progressed past Admin V2.  Status 'planned' means the run crashed
-        before the batch step and the batch may not exist yet.
+        Checks for status 'batch_created', 'created', or 'failed' — all three
+        mean the run progressed past Admin V2. Status 'planned' means the run
+        crashed before the batch step and the batch may not exist yet.
 
         Must be called BEFORE create_contest() resets status to 'planned'.
         """
         with self._conn() as conn:
             cur = conn.execute(
                 "SELECT 1 FROM contests WHERE program = ? AND batch_name = ? "
-                "AND status IN ('created', 'failed') LIMIT 1",
+                "AND status IN ('batch_created', 'created', 'failed') LIMIT 1",
                 (program, batch_name),
             )
             return cur.fetchone() is not None
