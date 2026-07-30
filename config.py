@@ -74,6 +74,7 @@ PROGRAMS: dict[str, SheetSpec] = {
         library_col="library name",
         link_col="Library Link",
         attempts_col="Num Attempts",
+        skill_eval_col="Skill Eval Label",
     ),
     "devops": SheetSpec(
         sheet_name="DevOps Libraries",
