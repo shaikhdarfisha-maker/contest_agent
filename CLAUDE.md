@@ -4,6 +4,65 @@ Read this file at the start of every session. It replaces machine-local memory.
 
 ---
 
+## Business / Domain Knowledge — READ THIS FIRST
+
+### What is Neovarsity (NV)?
+Neovarsity is Scaler's upskilling program for working professionals. Students are enrolled in one of several programs (Academy, DSML, AIML, DevOps). Each program has multiple modules taught sequentially (e.g. Advanced DSA 1 → 2 → 3 → 4).
+
+### What is an "NV Contest event"?
+An NV Contest event is a periodic assessment (monthly or quarterly) that runs **across multiple modules simultaneously**. For example, the "NV Contest June 2026" event might include:
+- Advanced DSA 1, 2, 3, 4 (Academy program)
+- Data Foundations, ML Coding (DSML program)
+- Basics of GenAI and AI Agents (AIML program)
+- …and more — potentially 15–20 modules in one event
+
+**The tool is run once per module.** Each run creates one module's contest. To run an entire event, the operator runs the tool once for each participating module, back to back. There is no "run all" mode.
+
+### What does one module's "contest" actually consist of?
+One module's NV Contest = **4 linked hire tests** on Scaler's Hire Test platform:
+- **Contest** (A1) — the main contest window, operator-supplied start/end
+- **Re-attempt 1** (A2) — starts when A1 ends (snapped to midnight), runs **7 days**
+- **Re-attempt 2** (A3) — starts when A2 ends, runs **9 days**
+- **Re-attempt 3** (A4) — starts when A3 ends, runs **10 days**
+
+These 4 tests are pre-linked in a "Group Contest Summary" on the `edit-sbat-group` page. The tool reads all 4 hire-test IDs from that page and sets each test's date window in order.
+
+### Programs and their module libraries
+| Program | Sheet in Library Excel | Notes |
+|---|---|---|
+| Academy | Academy Libraries | Largest program; DSA, Full-stack, etc. |
+| DSML | DSML Libraries | Data Science & ML modules |
+| AIML | AIML Libraries | AI/ML; GenAI and AI Agents modules carry `(AIML)` suffix |
+| DevOps | DevOps Libraries | Cloud/infrastructure modules |
+
+The `(AIML)` suffix (e.g. "Basics of GenAI and AI Agents (AIML)") is in the Excel/batch name to distinguish modules that appear in multiple programs. The suffix is stripped before CCT checkbox matching.
+
+### The "NV Contests" CCT library
+Most modules (especially in Academy) live in a single CCT library called **NV Contests**. This one library hosts 90+ contest classes, one per module (e.g. "Advanced DSA 4", "Full-stack LLD and Development 4"). The agent scrolls the full class list and matches by module name.
+
+Modules with dedicated CCT libraries (e.g. DSML or AIML-specific ones) are mapped in the Excel sheet. If a module is not in the sheet, the fallback is **NV Contests**.
+
+### Four systems the tool touches
+1. **Admin V2** (`scaler.com/admin/academy/v2/batches/`) — creates a batch by cloning an NV template batch. Batch name: `"{Module}: NV Contest {Month} {Year}"`.
+2. **CCT** (`scaler.com/scm/`) — schedules a class for that batch in the correct library, picks a slot (9 PM IST preferred), ticks the skill-eval checkbox for the module.
+3. **Hire Test** (`scaler.com/hire/test/<id>/`) — sets start/end dates for all 4 hire tests (Contest + 3 Re-attempts) found in the Group Contest Summary.
+4. **Google Sheets Tracker** — appends/updates one row per module with batch name, module, and all 4 start/end datetimes.
+
+### Timing conventions
+- Contests always start at **9 PM IST** on the contest date.
+- CCT class scheduling also targets **9 PM IST slots** (MWF or TTHS depending on the day).
+- The operator enters only the A1 (Contest) window; A2–A4 windows are derived automatically.
+
+### What to do when a new module is added
+1. Add a row to `data/Library__All_Programs.xlsx` in the correct program sheet: `Module Name | CCT Library Name`.
+2. If the CCT class is in the NV Contests library (most Academy modules), use `NV Contests`.
+3. If the module name has CamelCase in CCT (e.g. "MLCoding"), the tool normalises it automatically — no special handling needed.
+
+### What does the operator actually do?
+The operator (Scaler admin, typically 1–2 people per team) opens the Streamlit dashboard, enters 4 fields per module, and clicks "Run". They repeat this for each module in the current contest event. A full event of 15 modules ≈ 15 runs ≈ ~15 minutes total.
+
+---
+
 ## What this tool does
 
 End-to-end automation for creating Neovarsity contest classes on Scaler. One run does:
