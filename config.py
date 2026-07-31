@@ -90,6 +90,7 @@ PROGRAMS: dict[str, SheetSpec] = {
         library_col="Library Name",
         link_col="Link",
         status_col="CC",
+        skill_eval_col="Skill Eval Label",
     ),
     "aiml": SheetSpec(
         sheet_name="AIML Libraries",
