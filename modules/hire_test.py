@@ -277,7 +277,7 @@ class HireTest:
                 log.info("Custom Range sidebar option count: %d", _cr_count)
                 if _cr_count > 0:
                     custom_range.first.click(timeout=3000)
-                    self.page.wait_for_timeout(1000)
+                    self.page.wait_for_timeout(300)
                     log.info("Clicked 'Custom Range' in the ranges sidebar")
             except Exception as _cr_exc:  # noqa: BLE001
                 log.warning("Could not click 'Custom Range': %s", _cr_exc)
@@ -293,29 +293,16 @@ class HireTest:
             # stale end date. Confirmed live: switching to real clicks (this
             # path) after clicking "Custom Range" above is what actually
             # persists correctly server-side.
-            # Generous pauses throughout this whole sequence are deliberate.
-            # Live testing showed something stranger than "automation clicks
-            # the wrong thing": with automation doing the setup and a human
-            # only taking over for the final confirm click, even that manual
-            # click failed to close the modal — the same combination that
-            # works fine when a human does every step themselves, unhurried.
-            # That points to Scaler's page needing time to fully process each
-            # change before the next one; automation's near-instant pacing
-            # (previously ~200ms) may be outrunning it, leaving internal
-            # state inconsistent by the time the confirm modal appears, in a
-            # way no click afterward — automated or manual — can recover
-            # from. Slowing every step down to something closer to human
-            # pacing tests that theory directly.
             try:
                 self._pick_day(window.start)
-                self.page.wait_for_timeout(800)
+                self.page.wait_for_timeout(250)
                 self._pick_day(window.end)
-                self.page.wait_for_timeout(800)
+                self.page.wait_for_timeout(250)
             except Exception as exc:  # noqa: BLE001
                 raise BrowserStepError(f"Could not pick start/end days: {exc}")
             try:
                 self._set_times(window.start, window.end)
-                self.page.wait_for_timeout(800)
+                self.page.wait_for_timeout(250)
             except Exception as exc:  # noqa: BLE001
                 log.warning("Could not set time dropdowns precisely: %s", exc)
             _lap("days-picked")
@@ -333,7 +320,7 @@ class HireTest:
                 except Exception:  # noqa: BLE001
                     pass
                 confirm.click()
-                self.page.wait_for_timeout(1500)
+                self.page.wait_for_timeout(400)
                 _lap("applyBtn-clicked")
             except Exception as exc:  # noqa: BLE001
                 raise BrowserStepError(f"Could not click picker apply button: {exc}")
@@ -466,7 +453,7 @@ class HireTest:
                 # window). force=True was tried but triggered a confirm modal and
                 # timed out — the 30s wait IS the save; it cannot be bypassed.
                 apply_btn.first.click()
-                self.page.wait_for_timeout(1500)
+                self.page.wait_for_timeout(400)
                 _lap("apply-btn-clicked")
 
                 # Check for a confirmation modal ("Please review the recent
@@ -493,7 +480,7 @@ class HireTest:
                 try:
                     if final is not None and final.count() > 0:
                         final.first.scroll_into_view_if_needed()
-                        self.page.wait_for_timeout(1200)
+                        self.page.wait_for_timeout(300)
 
                         # DevTools Network capture proved a real human click
                         # on this exact button fires an XHR; a simulated
