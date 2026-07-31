@@ -257,19 +257,43 @@ class HireTest:
                 raise BrowserStepError(f"Could not open date-range picker: {exc}")
             _lap("picker-open")
 
-            # Set dates inside the open picker
-            js_ok = self._set_picker_dates_js(window.start, window.end)
-            if not js_ok:
-                try:
-                    self._pick_day(window.start)
+            # If the picker has a preset-ranges sidebar ("Today", "Next 7
+            # Days", "Custom Range", ...), it must be switched to "Custom
+            # Range" before setting dates — confirmed live: without this a
+            # manual human click on the calendar still silently saved a
+            # stale/default value instead of what was picked.
+            try:
+                custom_range = self.page.locator(".ranges li").filter(has_text="Custom Range")
+                _cr_count = custom_range.count()
+                log.info("Custom Range sidebar option count: %d", _cr_count)
+                if _cr_count > 0:
+                    custom_range.first.click(timeout=3000)
                     self.page.wait_for_timeout(200)
-                    self._pick_day(window.end)
-                except Exception as exc:  # noqa: BLE001
-                    raise BrowserStepError(f"Could not pick start/end days: {exc}")
-                try:
-                    self._set_times(window.start, window.end)
-                except Exception as exc:  # noqa: BLE001
-                    log.warning("Could not set time dropdowns precisely: %s", exc)
+                    log.info("Clicked 'Custom Range' in the ranges sidebar")
+            except Exception as _cr_exc:  # noqa: BLE001
+                log.warning("Could not click 'Custom Range': %s", _cr_exc)
+
+            # Set dates via REAL clicks on the calendar (_pick_day), not
+            # _set_picker_dates_js's direct picker.setStartDate()/setEndDate()
+            # JS calls. The JS approach updates the widget's own internal
+            # state correctly (verified: picker.startDate/endDate end up
+            # right, "ok: true" is returned) but never reaches AngularJS's
+            # $scope — it's not listening for a state mutation, only for the
+            # real click/apply events a genuine user interaction fires. That
+            # made "Apply Changes" report success while silently saving a
+            # stale end date. Confirmed live: switching to real clicks (this
+            # path) after clicking "Custom Range" above is what actually
+            # persists correctly server-side.
+            try:
+                self._pick_day(window.start)
+                self.page.wait_for_timeout(200)
+                self._pick_day(window.end)
+            except Exception as exc:  # noqa: BLE001
+                raise BrowserStepError(f"Could not pick start/end days: {exc}")
+            try:
+                self._set_times(window.start, window.end)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Could not set time dropdowns precisely: %s", exc)
             _lap("days-picked")
 
             # Confirm inside the picker
@@ -605,78 +629,6 @@ class HireTest:
             test_id=test_id, applied=True,
             start=window.start, end=window.end, verified=verified,
         )
-
-    # ------------------------------------------------------------------ #
-    def _set_picker_dates_js(self, start: datetime, end: datetime) -> bool:
-        """Set daterangepicker start/end programmatically via jQuery.
-        Returns True if the picker was found and dates were set."""
-        # Format: MM/DD/YYYY HH:mm — daterangepicker's default parse format
-        fmt = "%m/%d/%Y %H:%M"
-        start_s = start.strftime(fmt)
-        end_s   = end.strftime(fmt)
-        try:
-            result = self.page.evaluate(f"""() => {{
-                let picker = null;
-                try {{
-                    // 1. Standard: picker container holds the instance
-                    picker = jQuery('.daterangepicker').data('daterangepicker');
-
-                    if (!picker) {{
-                        // 2. Known selectors the AngularJS directive may use
-                        jQuery('input, [ng-model], [data-ng-model], span, div').each(function() {{
-                            const d = jQuery(this).data('daterangepicker');
-                            if (d && d.startDate && typeof d.setStartDate === 'function') {{
-                                picker = d; return false;
-                            }}
-                        }});
-                    }}
-
-                    if (!picker) {{
-                        // 3. Scan jQuery internal cache by key name
-                        const cache = jQuery.cache || {{}};
-                        for (const key in cache) {{
-                            const d = cache[key].data && cache[key].data.daterangepicker;
-                            if (d && d.startDate) {{ picker = d; break; }}
-                        }}
-                    }}
-
-                    if (!picker) {{
-                        // 4. Deep scan: ALL elements' jQuery data, any key whose
-                        //    value has startDate + setStartDate (AngularJS directive
-                        //    stores it on the trigger element under an arbitrary key).
-                        const allEls = document.querySelectorAll('*');
-                        outer: for (const el of allEls) {{
-                            const jqData = jQuery.data(el);
-                            if (!jqData) continue;
-                            for (const k in jqData) {{
-                                const v = jqData[k];
-                                if (v && v.startDate && v.endDate
-                                        && typeof v.setStartDate === 'function') {{
-                                    picker = v;
-                                    break outer;
-                                }}
-                            }}
-                        }}
-                    }}
-                }} catch(e) {{ return {{ok: false, reason: 'jQuery scan: ' + e.message}}; }}
-                if (!picker) return {{ok: false, reason: 'no picker found'}};
-                try {{
-                    picker.setStartDate('{start_s}');
-                    picker.setEndDate('{end_s}');
-                    return {{
-                        ok: true,
-                        start: picker.startDate ? picker.startDate.format() : '?',
-                        end:   picker.endDate   ? picker.endDate.format()   : '?',
-                    }};
-                }} catch(e) {{
-                    return {{ok: false, reason: 'setDate: ' + e.message}};
-                }}
-            }}""")
-            log.info("JS daterangepicker set: %s", result)
-            return bool(result and result.get("ok"))
-        except Exception as exc:  # noqa: BLE001
-            log.warning("JS daterangepicker set failed: %s", exc)
-            return False
 
     # ------------------------------------------------------------------ #
     def _pick_day(self, dt: datetime) -> None:
