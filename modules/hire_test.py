@@ -579,11 +579,11 @@ class HireTest:
             if _captured.get("url"):
                 import re as _re
                 base = _re.sub(r"/\d+$", "", _captured["url"])
-                HireTest._api_endpoint = base
-                HireTest._api_method   = _captured.get("method", "PATCH")
                 log.info(
-                    "Hire Test save mechanism discovered: %s %s",
-                    _captured["method"], _captured["url"],
+                    "Hire Test save mechanism observed (not re-enabling fast "
+                    "path — update_window_via_fetch sends an incomplete "
+                    "payload and 500s every time until it's rewritten): %s %s",
+                    _captured.get("method", "PATCH"), _captured["url"],
                 )
         except Exception as exc:  # noqa: BLE001
             raise BrowserStepError(f"Could not apply changes: {exc}")
