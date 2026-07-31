@@ -210,18 +210,26 @@ class HireTest:
                 except Exception:  # noqa: BLE001
                     pass
 
-                # B2: JS jQuery trigger on directive element
+                # B2: JS jQuery trigger on directive element. Must check whether
+                # an element was actually found and clicked before claiming
+                # success — a prior version set _picker_opened=True unconditionally
+                # whenever the JS eval didn't throw, even when the loop matched
+                # nothing and clicked nothing, which incorrectly skipped B3 (the
+                # actually-reliable fallback) on pages where none of these
+                # selectors match anything (observed on Contest/A1 pages).
                 if not _picker_opened:
                     try:
-                        self.page.evaluate("""() => {
+                        _b2_found = self.page.evaluate("""() => {
                             const sels = ['[daterangepicker]','[drp-field]','[date-range-picker]'];
                             for (const s of sels) {
                                 const $el = jQuery(s).first();
-                                if ($el.length) { $el.trigger('click'); break; }
+                                if ($el.length) { $el.trigger('click'); return true; }
                             }
+                            return false;
                         }""")
-                        _picker_opened = True
-                        log.info("Opened picker via JS jQuery trigger")
+                        if _b2_found:
+                            _picker_opened = True
+                            log.info("Opened picker via JS jQuery trigger")
                     except Exception:  # noqa: BLE001
                         pass
 
