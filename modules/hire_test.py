@@ -493,38 +493,70 @@ class HireTest:
                 try:
                     if final is not None and final.count() > 0:
                         final.first.scroll_into_view_if_needed()
-                        # Confirmed live: a real human click on this exact
-                        # button, at this exact moment, works — so the button
-                        # itself is fine, and neither force=True nor a fixed
-                        # settle delay reliably fixed it. Repeated live tests
-                        # showed this modal is genuinely flaky/racy on
-                        # Scaler's own page (its appearance timing varies run
-                        # to run with identical code). Rather than one click
-                        # and hope, actively verify the modal really closes
-                        # (#save_setting becomes hidden) and retry the CLICK
-                        # ITSELF a few times if it doesn't — cheap, and
-                        # doesn't re-do the whole picker/day-picking flow the
-                        # way the outer @retry on update_window() does.
                         self.page.wait_for_timeout(1200)
+
+                        # DevTools Network capture proved a real human click
+                        # on this exact button fires an XHR; a simulated
+                        # Playwright click on it — however many ways we tried
+                        # (normal, force, delayed, retried) — fires NO
+                        # network activity at all. Not a payload/timing/
+                        # session issue: the click event isn't reaching
+                        # AngularJS's ng-click binding to invoke
+                        # saveTestBasicSettings() in the first place. So skip
+                        # the click and call that function directly via the
+                        # element's own Angular scope — this is exactly what
+                        # ng-click="saveTestBasicSettings(null, true)" would
+                        # have triggered, just invoked directly instead of
+                        # hoping a simulated DOM click reaches it.
+                        _direct_result = self.page.evaluate("""() => {
+                            const el = document.getElementById('save_setting');
+                            if (!el) return {ok: false, reason: 'element not found'};
+                            const scope = angular.element(el).scope();
+                            if (!scope) return {ok: false, reason: 'no angular scope'};
+                            if (typeof scope.saveTestBasicSettings !== 'function') {
+                                return {ok: false, reason: 'saveTestBasicSettings not a function'};
+                            }
+                            try {
+                                scope.saveTestBasicSettings(null, true);
+                                scope.$apply();
+                                return {ok: true};
+                            } catch (e) {
+                                return {ok: false, reason: 'threw: ' + e.message};
+                            }
+                        }""")
+                        log.info("Direct Angular saveTestBasicSettings() call: %s", _direct_result)
+
                         _confirmed = False
-                        for _click_attempt in range(3):
-                            final.first.click(timeout=5000)
-                            _lap(f"confirm-modal-clicked-attempt-{_click_attempt + 1}")
+                        if _direct_result and _direct_result.get("ok"):
                             try:
                                 self.page.locator("#save_setting").wait_for(
-                                    state="hidden", timeout=4_000
+                                    state="hidden", timeout=5_000
                                 )
                                 _confirmed = True
-                                break
                             except Exception:  # noqa: BLE001
-                                log.warning(
-                                    "Confirm modal still open after click %d/3 for %s",
-                                    _click_attempt + 1, test_id,
-                                )
-                                self.page.wait_for_timeout(800)
+                                pass
+
+                        # Fall back to real clicks (with retry) if the direct
+                        # call didn't work or wasn't available.
+                        if not _confirmed:
+                            for _click_attempt in range(3):
+                                final.first.click(timeout=5000)
+                                _lap(f"confirm-modal-clicked-attempt-{_click_attempt + 1}")
+                                try:
+                                    self.page.locator("#save_setting").wait_for(
+                                        state="hidden", timeout=4_000
+                                    )
+                                    _confirmed = True
+                                    break
+                                except Exception:  # noqa: BLE001
+                                    log.warning(
+                                        "Confirm modal still open after click %d/3 for %s",
+                                        _click_attempt + 1, test_id,
+                                    )
+                                    self.page.wait_for_timeout(800)
                         if not _confirmed:
                             log.warning(
-                                "Confirm modal never closed after 3 click attempts for %s",
+                                "Confirm modal never closed (direct call or clicks) for %s",
                                 test_id,
                             )
                 except Exception:  # noqa: BLE001
