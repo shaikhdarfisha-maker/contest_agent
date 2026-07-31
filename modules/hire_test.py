@@ -46,8 +46,17 @@ class HireTest:
     """Page object for updating a Hire Test's start/end window (popup page)."""
 
     # Confirmed via DevTools: POST https://www.scaler.com/hire/test/{id}/basic-settings
-    # Payload: GET current settings, patch start_time/end_time, POST full object back.
-    _api_endpoint: Optional[str] = "https://www.scaler.com/hire/test"
+    # Payload was meant to be: GET current settings, patch start_time/end_time,
+    # POST full object back — but update_window_via_fetch actually sends only
+    # {start_time, end_time}, not the full merged object. That's had a 100%
+    # HTTP 500 failure rate (every hire test, every module, all day) AND a
+    # confirmed harmful side effect: the failed POST still appears to trigger
+    # a server-side password regeneration, which then contaminates the
+    # UI-fallback confirm modal with an extra unrelated "Password" change a
+    # real human never sees, causing that confirm to silently fail too.
+    # Disabled (default None) until update_window_via_fetch is rewritten to
+    # actually do the GET-merge-POST the comment above describes.
+    _api_endpoint: Optional[str] = None
     _api_method:   str = "POST"
 
     def __init__(self, page: Page) -> None:
