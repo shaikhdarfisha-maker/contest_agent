@@ -237,11 +237,22 @@ class BrowserManager:
         return self._page
 
     def new_hire_page(self, test_id: str) -> Page:
-        """Open a fresh page at a Hire Test and wait until interactive."""
+        """Open a fresh page at a Hire Test and wait until interactive.
+
+        Navigates twice: the Contest attempt is always the very first hire
+        test opened in a brand-new tab, and only it (never Re-attempts,
+        which reuse an already-loaded tab) has been observed live to save
+        the wrong end date via the UI-fallback path — repeatedly, across
+        multiple modules, with correct-looking clicks throughout. The first
+        navigation here is a throwaway warm-up so the "real" one below is no
+        longer the tab's literal first-ever page load, testing whether that
+        first-load state (session/cookie/Angular init) is the actual cause.
+        """
         if self._context is None:
             raise RuntimeError("BrowserManager used outside its context.")
         page = self._context.new_page()
-        self._goto_hire_page(page, test_id)
+        self._goto_hire_page(page, test_id)  # warm-up
+        self._goto_hire_page(page, test_id)  # real navigation
         return page
 
     def reuse_hire_page(self, page: Page, test_id: str) -> None:
