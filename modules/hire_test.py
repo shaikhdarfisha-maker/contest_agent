@@ -467,7 +467,15 @@ class HireTest:
                 try:
                     if final is not None and final.count() > 0:
                         final.first.scroll_into_view_if_needed()
-                        final.first.click()
+                        # force=True: a normal click here was observed live to
+                        # hang ("froze" after the diff-table modal appeared) —
+                        # consistent with Playwright refusing to click because
+                        # it thinks the button is covered/obscured (e.g. by
+                        # the modal's own backdrop, or the text locator
+                        # grabbing an inner span rather than the real button).
+                        # force bypasses those actionability checks and
+                        # dispatches the click directly.
+                        final.first.click(force=True, timeout=5000)
                         _lap("confirm-modal-clicked")
                         try:
                             self.page.locator("#save_setting").wait_for(
