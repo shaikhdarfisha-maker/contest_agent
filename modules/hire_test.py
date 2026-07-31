@@ -443,6 +443,13 @@ class HireTest:
                 apply_btn.first.click()
                 _lap("apply-btn-clicked")
 
+                # A tour overlay only appears/blocks on the FIRST hire test
+                # opened in a session (before localStorage marks it seen —
+                # see _dismiss_tour_overlay and bug #12 in CLAUDE.md). If it's
+                # still up here, it can intercept the click meant for the
+                # confirm modal below. Dismiss defensively before checking.
+                self._dismiss_tour_overlay()
+
                 # Check for a confirmation modal ("Please review the recent
                 # changes...") that shows a computed old-vs-new diff table —
                 # some hire tests save directly with no modal, others require
