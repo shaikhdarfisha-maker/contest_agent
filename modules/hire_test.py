@@ -127,8 +127,16 @@ class HireTest:
                     const e = moment('{_end_s}',   'MM/DD/YYYY HH:mm');
                     if (!s.isValid() || !e.isValid()) return {{ok: false, reason: 'invalid dates'}};
                     const fakePicker = {{startDate: s, endDate: e, chosenLabel: 'Custom Range'}};
+                    // NOTE: do not add a generic fallback like 'input[type="text"]' here.
+                    // On some hire-test page layouts (observed on Contest/A1 pages,
+                    // not Re-attempts) it grabs the wrong text input, silently
+                    // reports ok:true, and the real date-range widget never updates
+                    // its end date — verified failing 3/3 retries identically before
+                    // this was found (see CLAUDE.md bug #15). Only trust selectors
+                    // that are actually the date-range directive; if none match,
+                    // ok:false correctly falls through to the real picker-click path.
                     const sels = ['[daterangepicker]', '[drp-field]', '[date-range-picker]',
-                                  '[ng-daterangepicker]', 'input[type="text"]'];
+                                  '[ng-daterangepicker]'];
                     for (const sel of sels) {{
                         const $el = jQuery(sel).filter(':visible').first();
                         if ($el.length) {{
