@@ -210,15 +210,6 @@ class ContestOrchestrator:
                 + " | ".join(plan_lines),
             )
 
-            # Check batch existence BEFORE create_contest resets status to
-            # "planned".  A prior failed run leaves status="failed"; checking
-            # here (not inside _browser_steps_inner) captures that pre-reset
-            # truth.  Only 'created' or 'failed' statuses prove the batch step
-            # completed — 'planned' means the previous run crashed before it.
-            _skip_batch = self.store.batch_was_previously_created(
-                request.program, batch_name
-            )
-
             # -- record intent in SQLite ---------------------------------- #
             contest_db_id = self.store.create_contest(
                 program=request.program,
@@ -240,7 +231,6 @@ class ContestOrchestrator:
                 schedule_result = self._run_browser_steps(
                     request, library, batch_name, windows, emit, contest_db_id,
                     skip_hire_test=skip_hire_test,
-                    skip_batch=_skip_batch,
                 )
                 outcome.test_ids = schedule_result.test_ids
                 outcome.contest_id = schedule_result.contest_test_id
@@ -390,7 +380,6 @@ class ContestOrchestrator:
         emit: Callable[..., None],
         contest_db_id: Optional[int],
         skip_hire_test: bool = False,
-        skip_batch: bool = False,
     ) -> ScheduleResult:
         """Steps 4-7 inside a managed browser session."""
         with BrowserManager() as bm:
@@ -399,7 +388,6 @@ class ContestOrchestrator:
                 return self._browser_steps_inner(
                     bm, page, request, library, batch_name, windows,
                     emit, contest_db_id, skip_hire_test,
-                    skip_batch=skip_batch,
                 )
             except (SessionExpiredError, SessionLimitError):
                 raise  # already the right type; screenshot captured proactively
@@ -429,29 +417,22 @@ class ContestOrchestrator:
         emit: Callable[..., None],
         contest_db_id: Optional[int],
         skip_hire_test: bool = False,
-        skip_batch: bool = False,
     ) -> ScheduleResult:
-        # Step 4: create batch (Admin V2).
-        # skip_batch is True when a prior run (status 'created' or 'failed')
-        # already completed the batch step — checked before create_contest()
-        # resets the status to 'planned'.
-        from modules.batch_creator import BatchResult as _BatchResult
-        if skip_batch:
-            log.info("Batch '%s' previously created — skipping Admin V2", batch_name)
-            emit("batch", f"Batch '{batch_name}' already exists — skipping Admin V2")
-            batch = _BatchResult(batch_name=batch_name, batch_id=None)
-        else:
-            emit("batch", f"Creating batch '{batch_name}' in Admin V2")
-            batch = BatchCreator(page).create_batch(batch_name)
+        # Step 4: create batch (Admin V2). Always goes through BatchCreator,
+        # which does its own live check against Scaler's Admin V2 batch list
+        # and reuses an existing batch if found rather than re-cloning — this
+        # is the single source of truth for "does this batch exist", not the
+        # local metadata DB. (A prior version trusted a local "was this
+        # created before" flag instead and skipped straight to CCT scheduling
+        # on retries; when that flag was wrong — e.g. after any failure
+        # before the batch actually existed — CCT would time out searching
+        # for a batch that was never created. See CLAUDE.md bug #14.)
+        emit("batch", f"Creating/verifying batch '{batch_name}' in Admin V2")
+        batch = BatchCreator(page).create_batch(batch_name)
         if contest_db_id is not None:
-            # Mark the batch step itself as confirmed done as soon as it
-            # actually is — status="failed" from a later step (CCT/hire
-            # test/tracker) then correctly implies "batch exists, safe to
-            # skip on retry". Without this, any failure anywhere in the run
-            # got the blanket status="failed" below, even when the batch was
-            # never created, poisoning every future retry into skipping
-            # Admin V2 forever (they'd search CCT for a batch that doesn't
-            # exist and time out the same way).
+            # Record that the batch step is confirmed done, purely for the
+            # History tab's diagnostic value (which step a failed run got
+            # to) — no longer used to decide whether to skip Admin V2.
             update_fields: dict = {"status": "batch_created"}
             if batch.batch_id is not None:
                 update_fields["batch_id"] = batch.batch_id
