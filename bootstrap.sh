@@ -9,8 +9,13 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/shaikhdarfisha-maker/contest_agent.git"
-DEST="$HOME/Downloads/contest_agent"
-SECRETS_ZIP="$HOME/Downloads/secrets_bundle.zip"
+# NOT ~/Downloads: macOS blocks background/launchd-launched processes from
+# accessing Desktop/Documents/Downloads without an explicit permission grant
+# that's awkward to give to a raw script. Auto-start on login silently fails
+# with "Operation not permitted" if the project lives in Downloads — learned
+# the hard way, see CLAUDE.md.
+DEST="$HOME/contest_agent"
+SECRETS_ZIP="$HOME/Downloads/secrets_bundle.zip"  # AirDrop always lands here; fine to leave
 
 echo "=== NV Contest Agent — Setup ==="
 echo ""
@@ -71,7 +76,7 @@ echo ""
 echo "=== Setup finished! Two last things, done by hand: ==="
 echo ""
 echo "1) Run this and log in to Scaler in the browser window that opens:"
-echo "     cd ~/Downloads/contest_agent && python3.11 capture_login.py"
+echo "     cd ~/contest_agent && python3.11 capture_login.py"
 echo ""
 echo "2) Then start the app:"
 echo "     ./start.sh"

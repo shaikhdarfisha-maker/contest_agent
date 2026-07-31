@@ -78,7 +78,7 @@ End-to-end automation for creating Neovarsity contest classes on Scaler. One run
 ## How to run locally
 
 ```bash
-cd ~/Downloads/contest_agent
+cd ~/contest_agent
 ./start.sh        # starts Streamlit on :8501 + ngrok tunnel
 ```
 
@@ -108,7 +108,7 @@ This installs Homebrew/python/ngrok/git if missing, clones the repo, installs Py
 
 Then refresh the Scaler session (always required — sessions don't transfer machine to machine):
 ```bash
-cd ~/Downloads/contest_agent
+cd ~/contest_agent
 python3.11 capture_login.py   # opens browser, log in manually
 ```
 
@@ -215,6 +215,17 @@ The `apply.daterangepicker` event-trigger path tries a list of selectors and fir
 ### 16. CCT class scheduling is NOT idempotent — don't re-run a whole contest from the UI to retry a later step
 **Files:** `schedule_creator.py` → `schedule_class()`; contrast with `batch_creator.py` → `create_batch()` (which IS idempotent, see #14)
 Unlike batch creation, CCT scheduling has no "already scheduled, reuse it" check — every full run schedules a brand-new class. If a run fails at the hire-test or tracker step (batch + CCT already succeeded), re-running the same module from the Streamlit UI creates a **second duplicate scheduled class** with a fresh set of 4 hire-test IDs, orphaning the first set. When only a later step failed, fix that step in isolation instead (`finish_hire_test.py <test_id> <start> <end>` for a hire-test date, a direct `_build_tracker(program).append_contest(...)` call for the tracker) — never just click Run again on the same module once CCT has already scheduled successfully.
+
+### 17. Hire Test "Confirm & Apply Changes" — simulated clicks stopped reaching AngularJS entirely (call the function directly)
+**File:** `hire_test.py` → `update_window()`, confirm-modal handling
+The single biggest fix from a very long live-debugging session. Symptom: the Contest (first) hire-test window in every run consistently failed to save the correct end date, while every Re-attempt in the same run succeeded with identical code — across every fix attempt (Custom Range click, real vs JS-driven day-picking, force clicks, settle delays, retrying the click, removing the API fast-path as a contamination source, slowing the whole sequence down to human pacing). None of it worked. A real human click on the exact same button, at the exact moment automation was stuck, always worked immediately — even inside the same Playwright-launched browser/session, ruling out session/browser explanations.
+**Root cause, proven via Chrome DevTools Network tab** (not guessed): a simulated Playwright click on `#save_setting` (`ng-click="saveTestBasicSettings(null, true)"`) produces **zero network requests** — the click event was landing on the correct, visible element but never reaching AngularJS's `ng-click` binding to invoke the handler at all. Not a payload issue, not a timing issue, not a session issue.
+**Fix:** stopped simulating a click and instead call the Angular scope function directly via `page.evaluate()`: `angular.element(el).scope().saveTestBasicSettings(null, true); scope.$apply();` — the same call `ng-click` would have made, just invoked directly rather than hoping a simulated DOM click reaches it. Falls back to the old retry-click logic only if the direct call is unavailable.
+**If this regresses again:** don't re-try click mechanics (force/delay/retry all already tried and failed) — go straight to DevTools Network tab inspection (`HIRE_TEST_DEBUG_PAUSE=1` env var pauses right before Apply Changes for exactly this) to check whether a request fires at all before assuming a payload/logic bug.
+
+### 18. Don't put the project in ~/Downloads, ~/Desktop, or ~/Documents
+**File:** `launchd/com.contestagent.app.plist`, `bootstrap.sh`
+macOS blocks background/`launchd`-launched processes from accessing Desktop/Documents/Downloads without an explicit per-app permission grant — one that's awkward to give to a raw shell script (there's no simple GUI picker entry for it). Auto-start on login silently fails with `Operation not permitted` (visible in `logs/launchd.log`) if the project lives in one of those folders, even though running the identical script manually from Terminal works fine (Terminal.app itself already has the access). Fix: keep the project directly under `$HOME` (e.g. `~/contest_agent`) or anywhere else outside those three protected folders. `bootstrap.sh` now defaults new installs to `~/contest_agent`.
 
 ---
 

@@ -82,11 +82,22 @@ The `orchestrator` wires these together; `app.py` (CLI) and `streamlit_app.py`
 - **Past start times are rejected early.** If the contest start datetime has
   already passed when the agent runs, it fails immediately with a clear message
   before opening any browser.
-- **A "contest" is four linked tests** (Contest + Re-attempt 1/2/3). The
-  operator enters only the **A1** window; the rest are derived:
-  - A2: starts when A1 ends (snapped to 00:00), runs **7 days**
-  - A3: starts when A2 ends, runs **9 days**
-  - A4: starts when A3 ends, runs **10 days**
+- **A contest is 1-4 linked tests** (Contest + up to 3 Re-attempts — the real
+  count is auto-detected from what CCT actually creates, not assumed to
+  always be 4). The operator enters only the **A1 (Contest)** window; the
+  rest are derived by attempt count (`config.ATTEMPT_DURATIONS`), each
+  starting at midnight when the previous one ends:
+  | Attempts | Durations (days) |
+  |---|---|
+  | 1 | 30 |
+  | 2 | 15, 15 |
+  | 3 | 7, 7, 7 |
+  | 4 | 7, 7, 7, 7 |
+
+  (A separate, older rule — `derive_attempt_windows` / `REATTEMPT_RULE`,
+  A2:+7/A3:+9/A4:+10 days — only applies if the CLI is given an explicit
+  `--end` instead of an attempt count; the Streamlit dashboard always uses
+  the table above.)
 - **The tracker is treated as the source of truth.** The agent appends a row
   using only the manually-entered columns (Module, Batch Name, the four
   start/end datetimes). It never adds columns or overwrites formulas.
@@ -284,6 +295,16 @@ ngrok tunnel. The URL never changes between restarts.
 
 **One-time setup**
 
+Fastest path for a *new* machine that already has a working install elsewhere:
+on the working Mac run `./bundle_secrets.sh` (zips the 4 secret files + the
+history DB into one AirDrop-friendly file), send it to the new Mac's Downloads
+folder, then on the new Mac run
+`curl -fsSL https://raw.githubusercontent.com/shaikhdarfisha-maker/contest_agent/main/bootstrap.sh | bash` —
+installs Homebrew/python/ngrok/git, clones into `~/contest_agent` (not
+Downloads — see note below), installs dependencies, and unpacks the secrets.
+
+Manual setup:
+
 ```bash
 # 1. Install dependencies
 python -m venv .venv && source .venv/bin/activate
@@ -301,6 +322,13 @@ python3 capture_login.py
 # Confirm CCT page loads → Enter
 # Session saved to data/storage_state.json
 ```
+
+> **Don't put the project in `~/Downloads`, `~/Desktop`, or `~/Documents`.**
+> macOS blocks background/launchd-launched processes from accessing those
+> folders without an explicit, awkward-to-grant permission. Auto-start on
+> login (below) will silently fail with `Operation not permitted` if the
+> project lives there. `~/contest_agent` (or anywhere else under your home
+> folder) works fine.
 
 **Daily start**
 
@@ -388,3 +416,4 @@ If you ever retry Community Cloud deployment:
 | `LibraryNotFoundError` | Module not in Library Excel | Add a row to `data/Library__All_Programs.xlsx` or use Library Override |
 | `AmbiguousLibraryError` | Module has duplicate rows | Remove duplicate from Excel |
 | `TrackerUpdateError` | Google Sheets credentials missing | Check `data/service_account.json` exists and is shared on the Sheet |
+| Run fails at Hire Test or Tracker step (batch + CCT already succeeded) | — | **Don't just click Run again** — CCT scheduling isn't idempotent and will create a second duplicate class. Fix the failed step directly: `python3.11 finish_hire_test.py <test_id> <start> <end>` for a hire-test date (see CLAUDE.md bug #16) |

@@ -14,9 +14,9 @@
     rm ~/Library/LaunchAgents/com.contestagent.app.plist
 
   LOGS:
-    tail -f /Users/darfisha/Downloads/contest_agent/logs/launchd.log
-    tail -f /Users/darfisha/Downloads/contest_agent/logs/streamlit.log
-    tail -f /Users/darfisha/Downloads/contest_agent/logs/ngrok.log
+    tail -f /Users/darfisha/contest_agent/logs/launchd.log
+    tail -f /Users/darfisha/contest_agent/logs/streamlit.log
+    tail -f /Users/darfisha/contest_agent/logs/ngrok.log
 
   NOTE: The Mac must not sleep while users are accessing the app.
     → System Settings → Battery → Prevent automatic sleeping: ON
@@ -30,11 +30,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/darfisha/Downloads/contest_agent/start.sh</string>
+        <string>/Users/darfisha/contest_agent/start.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/darfisha/Downloads/contest_agent</string>
+    <string>/Users/darfisha/contest_agent</string>
 
     <!-- launchd runs with a minimal PATH; extend it so ngrok and python3
          (installed via Homebrew at /usr/local/bin or /opt/homebrew/bin) are found.
@@ -58,8 +58,8 @@
     <integer>30</integer>
 
     <key>StandardOutPath</key>
-    <string>/Users/darfisha/Downloads/contest_agent/logs/launchd.log</string>
+    <string>/Users/darfisha/contest_agent/logs/launchd.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/darfisha/Downloads/contest_agent/logs/launchd.log</string>
+    <string>/Users/darfisha/contest_agent/logs/launchd.log</string>
 </dict>
 </plist>
