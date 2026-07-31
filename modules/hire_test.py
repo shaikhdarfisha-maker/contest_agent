@@ -443,18 +443,29 @@ class HireTest:
                 apply_btn.first.click()
                 _lap("apply-btn-clicked")
 
-                # Check briefly for a confirmation modal; most hire tests save
-                # directly on "Apply Changes" with no modal. 300ms is enough to
-                # catch a modal that appears fast; 2000ms was always wasted.
+                # Check for a confirmation modal ("Please review the recent
+                # changes...") that shows a computed old-vs-new diff table —
+                # some hire tests save directly with no modal, others require
+                # this extra confirmation. A prior version waited only 300ms
+                # for #save_setting, then fell back to a synchronous (non-
+                # waiting) .count() check on the text locator — if the modal's
+                # diff table took even slightly longer than that to render
+                # (plausible, it has to compute what changed), the code gave
+                # up before it appeared and never clicked it at all, silently
+                # leaving the change unconfirmed. Now both paths properly wait.
+                final = None
                 try:
                     final = self.page.locator("#save_setting")
-                    final.first.wait_for(state="visible", timeout=300)
+                    final.first.wait_for(state="visible", timeout=5000)
                 except Exception:  # noqa: BLE001
                     final = self.page.get_by_text("Confirm & Apply Changes")
+                    try:
+                        final.first.wait_for(state="visible", timeout=5000)
+                    except Exception:  # noqa: BLE001
+                        final = None  # genuinely no modal appeared
 
                 try:
-                    if final.count() > 0:
-                        final.first.wait_for(state="visible", timeout=4000)
+                    if final is not None and final.count() > 0:
                         final.first.scroll_into_view_if_needed()
                         final.first.click()
                         _lap("confirm-modal-clicked")
