@@ -467,15 +467,19 @@ class HireTest:
                 try:
                     if final is not None and final.count() > 0:
                         final.first.scroll_into_view_if_needed()
-                        # force=True: a normal click here was observed live to
-                        # hang ("froze" after the diff-table modal appeared) —
-                        # consistent with Playwright refusing to click because
-                        # it thinks the button is covered/obscured (e.g. by
-                        # the modal's own backdrop, or the text locator
-                        # grabbing an inner span rather than the real button).
-                        # force bypasses those actionability checks and
-                        # dispatches the click directly.
-                        final.first.click(force=True, timeout=5000)
+                        # Confirmed live: a real human click on this exact
+                        # button, at this exact moment, works — so the button
+                        # itself is fine and force=True wasn't the issue.
+                        # Leading theory now: a timing race. The modal has to
+                        # compute a diff table (old vs new values) before it's
+                        # fully interactive; the button is visible in the DOM
+                        # slightly before AngularJS finishes binding its click
+                        # handler. A force click at that instant technically
+                        # dispatches an event, but nothing is listening yet —
+                        # indistinguishable from "froze". Give the digest
+                        # cycle a moment to settle before clicking for real.
+                        self.page.wait_for_timeout(1200)
+                        final.first.click(timeout=5000)
                         _lap("confirm-modal-clicked")
                         try:
                             self.page.locator("#save_setting").wait_for(
