@@ -478,24 +478,38 @@ class HireTest:
                         final.first.scroll_into_view_if_needed()
                         # Confirmed live: a real human click on this exact
                         # button, at this exact moment, works — so the button
-                        # itself is fine and force=True wasn't the issue.
-                        # Leading theory now: a timing race. The modal has to
-                        # compute a diff table (old vs new values) before it's
-                        # fully interactive; the button is visible in the DOM
-                        # slightly before AngularJS finishes binding its click
-                        # handler. A force click at that instant technically
-                        # dispatches an event, but nothing is listening yet —
-                        # indistinguishable from "froze". Give the digest
-                        # cycle a moment to settle before clicking for real.
+                        # itself is fine, and neither force=True nor a fixed
+                        # settle delay reliably fixed it. Repeated live tests
+                        # showed this modal is genuinely flaky/racy on
+                        # Scaler's own page (its appearance timing varies run
+                        # to run with identical code). Rather than one click
+                        # and hope, actively verify the modal really closes
+                        # (#save_setting becomes hidden) and retry the CLICK
+                        # ITSELF a few times if it doesn't — cheap, and
+                        # doesn't re-do the whole picker/day-picking flow the
+                        # way the outer @retry on update_window() does.
                         self.page.wait_for_timeout(1200)
-                        final.first.click(timeout=5000)
-                        _lap("confirm-modal-clicked")
-                        try:
-                            self.page.locator("#save_setting").wait_for(
-                                state="hidden", timeout=3_000
+                        _confirmed = False
+                        for _click_attempt in range(3):
+                            final.first.click(timeout=5000)
+                            _lap(f"confirm-modal-clicked-attempt-{_click_attempt + 1}")
+                            try:
+                                self.page.locator("#save_setting").wait_for(
+                                    state="hidden", timeout=4_000
+                                )
+                                _confirmed = True
+                                break
+                            except Exception:  # noqa: BLE001
+                                log.warning(
+                                    "Confirm modal still open after click %d/3 for %s",
+                                    _click_attempt + 1, test_id,
+                                )
+                                self.page.wait_for_timeout(800)
+                        if not _confirmed:
+                            log.warning(
+                                "Confirm modal never closed after 3 click attempts for %s",
+                                test_id,
                             )
-                        except Exception:  # noqa: BLE001
-                            pass
                 except Exception:  # noqa: BLE001
                     log.debug("No 'Confirm & Apply Changes' modal to click.")
                 _lap("apply-sequence-done")
